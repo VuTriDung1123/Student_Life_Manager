@@ -6,13 +6,15 @@ import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import com.google.firebase.auth.FirebaseAuth
-// QUAN TRỌNG: Phải import 2 dòng này
 import com.personal.studentlifemanager.ui.screens.HomeScreen
 import com.personal.studentlifemanager.ui.screens.LoginScreen
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        //splashScreen.setKeepOnScreenCondition { true }
         setContent {
             MaterialTheme {
                 val auth = remember { FirebaseAuth.getInstance() }
