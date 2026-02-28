@@ -33,18 +33,22 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpenseScreen(
     onBack: () -> Unit,
     onNavigateToAnalytics: () -> Unit,
-    onNavigateToCategory: () -> Unit = {}, // Thêm nút sang trang Category
+    onNavigateToCategory: () -> Unit = {},
     viewModel: ExpenseViewModel = viewModel()
 ) {
     var showBottomSheet by remember { mutableStateOf(false) }
 
-    val transactions = viewModel.transactions
+    // 🔥 ĐIỂM ĂN TIỀN: Lấy danh sách đã bị "lọc" theo tháng thay vì lấy toàn bộ
+    val transactions = viewModel.filteredTransactions
+
     val formatter = NumberFormat.getCurrencyInstance(Locale("vi", "VN"))
 
     val totalIncome = transactions.filter { it.isIncome }.sumOf { it.amount }
@@ -56,32 +60,43 @@ fun ExpenseScreen(
             TopAppBar(
                 title = { Text("Quản lý chi tiêu", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Quay lại")
-                    }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Quay lại") }
                 },
                 actions = {
-                    // Nút sang trang Quản lý Danh mục
-                    IconButton(onClick = onNavigateToCategory) {
-                        Icon(Icons.Default.List, contentDescription = "Danh mục", tint = MaterialTheme.colorScheme.primary)
-                    }
-                    // Nút sang trang Báo cáo Analytics
-                    IconButton(onClick = onNavigateToAnalytics) {
-                        Icon(Icons.Default.Analytics, contentDescription = "Báo cáo", tint = MaterialTheme.colorScheme.primary)
-                    }
+                    IconButton(onClick = onNavigateToCategory) { Icon(Icons.Default.List, contentDescription = "Danh mục", tint = MaterialTheme.colorScheme.primary) }
+                    IconButton(onClick = onNavigateToAnalytics) { Icon(Icons.Default.Analytics, contentDescription = "Báo cáo", tint = MaterialTheme.colorScheme.primary) }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showBottomSheet = true },
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
+            FloatingActionButton(onClick = { showBottomSheet = true }, containerColor = MaterialTheme.colorScheme.primary) {
                 Icon(Icons.Default.Add, contentDescription = "Thêm", tint = Color.White)
             }
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).padding(horizontal = 16.dp).fillMaxSize()) {
+
+            // 🔥 THANH ĐIỀU HƯỚNG THÁNG / NĂM
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { viewModel.previousMonth() }) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Tháng trước")
+                }
+
+                // Hiển thị Tháng (Tháng trong Calendar bắt đầu từ 0 nên phải + 1)
+                Text(
+                    text = "Tháng ${viewModel.selectedMonth + 1}, ${viewModel.selectedYear}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                IconButton(onClick = { viewModel.nextMonth() }) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Tháng sau")
+                }
+            }
 
             // CARD TỔNG QUAN
             Card(
@@ -90,7 +105,7 @@ fun ExpenseScreen(
                 shape = RoundedCornerShape(20.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Số dư hiện tại", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                    Text("Số dư trong tháng", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
                     Text(
                         text = formatter.format(balance),
                         style = MaterialTheme.typography.headlineLarge,
@@ -118,7 +133,7 @@ fun ExpenseScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             if (transactions.isEmpty()) {
-                Text("Chưa có giao dịch nào. Hãy bấm dấu + để thêm nhé!", color = Color.Gray, modifier = Modifier.padding(top = 16.dp))
+                Text("Không có giao dịch nào trong tháng này.", color = Color.Gray, modifier = Modifier.padding(top = 16.dp))
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(transactions) { transaction ->
