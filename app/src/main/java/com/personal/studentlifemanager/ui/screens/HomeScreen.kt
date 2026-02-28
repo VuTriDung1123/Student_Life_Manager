@@ -16,7 +16,11 @@ import com.personal.studentlifemanager.ui.components.ModuleCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(userName: String, onLogout: () -> Unit) {
+fun HomeScreen(
+    userName: String,
+    onLogout: () -> Unit,
+    onNavigateToExpense: () -> Unit // Thêm dòng này
+) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -42,7 +46,15 @@ fun HomeScreen(userName: String, onLogout: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Sử dụng các Icon cơ bản có sẵn trong thư viện Default để tránh lỗi
-                item { ModuleCard("Chi tiêu", Icons.Default.ShoppingCart, Color(0xFF4CAF50)) {} }
+                item {
+                    ModuleCard(
+                        title = "Chi tiêu",
+                        icon = Icons.Default.ShoppingCart,
+                        color = Color(0xFF4CAF50)
+                    ) {
+                        onNavigateToExpense() // Khi bấm nút thì gọi hàm này
+                    }
+                }
                 item { ModuleCard("Pomodoro", Icons.Default.Schedule, Color(0xFFFF5722)) {} }
                 item { ModuleCard("Thẻ nhớ", Icons.Default.MenuBook, Color(0xFF2196F3)) {} }
                 item { ModuleCard("Thói quen", Icons.Default.TaskAlt, Color(0xFF9C27B0)) {} }
