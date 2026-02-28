@@ -3,6 +3,8 @@ package com.personal.studentlifemanager.data.repository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
+import com.google.firebase.firestore.Query
+import com.personal.studentlifemanager.data.model.Category
 import com.personal.studentlifemanager.data.model.Transaction
 
 class ExpenseRepository {
@@ -10,7 +12,7 @@ class ExpenseRepository {
     private val auth = FirebaseAuth.getInstance()
 
     init {
-        // ĐIỂM ĂN TIỀN CV Ở ĐÂY: Bật tính năng Offline Persistence (Lưu trữ ngoại tuyến)
+        // Bật tính năng Offline Persistence (Lưu trữ ngoại tuyến)
         val settings = FirebaseFirestoreSettings.Builder()
             .setLocalCacheSettings(
                 com.google.firebase.firestore.PersistentCacheSettings.newBuilder().build()
@@ -19,18 +21,18 @@ class ExpenseRepository {
         firestore.firestoreSettings = settings
     }
 
-    // Lấy ID của user đang đăng nhập (để dữ liệu ai người nấy xem)
+    // Lấy ID của user đang đăng nhập
     private val userId get() = auth.currentUser?.uid ?: "unknown_user"
 
-    // Tham chiếu đến bảng "transactions" của user này
+    // ==========================================
+    // --- KHU VỰC 1: GIAO DỊCH (TRANSACTIONS) ---
+    // ==========================================
     private val transactionRef get() = firestore
         .collection("users")
         .document(userId)
         .collection("transactions")
 
-    // Hàm 1: Thêm giao dịch mới
     fun addTransaction(transaction: Transaction, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
-        // Tạo một ID ngẫu nhiên cho Document
         val docRef = transactionRef.document()
         val transactionWithId = transaction.copy(id = docRef.id)
 
@@ -39,17 +41,53 @@ class ExpenseRepository {
             .addOnFailureListener { e -> onFailure(e) }
     }
 
-    // Hàm 2: Lấy danh sách giao dịch (Tự động cập nhật real-time)
     fun getTransactions(onResult: (List<Transaction>) -> Unit) {
-        transactionRef.orderBy("date", com.google.firebase.firestore.Query.Direction.DESCENDING)
+        transactionRef.orderBy("date", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     onResult(emptyList())
                     return@addSnapshotListener
                 }
-
                 val list = snapshot?.documents?.mapNotNull { it.toObject(Transaction::class.java) } ?: emptyList()
                 onResult(list)
             }
+    }
+
+    // 🗑️ HÀM BỊ THIẾU GÂY RA LỖI ĐÃ ĐƯỢC THÊM VÀO ĐÂY
+    fun deleteTransaction(transactionId: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        transactionRef.document(transactionId).delete()
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { e -> onFailure(e) }
+    }
+
+    // ==========================================
+    // --- KHU VỰC 2: DANH MỤC (CATEGORIES) ---
+    // ==========================================
+    private val categoryRef get() = firestore
+        .collection("users")
+        .document(userId)
+        .collection("categories")
+
+    fun getCategories(onResult: (List<Category>) -> Unit) {
+        categoryRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                onResult(emptyList())
+                return@addSnapshotListener
+            }
+            val list = snapshot?.documents?.mapNotNull { doc ->
+                doc.toObject(Category::class.java)?.apply { id = doc.id }
+            } ?: emptyList()
+            onResult(list)
+        }
+    }
+
+    fun addCategory(category: Category, onSuccess: () -> Unit) {
+        val docRef = categoryRef.document()
+        val catWithId = category.apply { id = docRef.id }
+        docRef.set(catWithId).addOnSuccessListener { onSuccess() }
+    }
+
+    fun deleteCategory(categoryId: String) {
+        categoryRef.document(categoryId).delete()
     }
 }

@@ -9,10 +9,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
-import com.personal.studentlifemanager.ui.screens.ExpenseAnalyticsScreen
 import com.personal.studentlifemanager.ui.screens.ExpenseScreen
 import com.personal.studentlifemanager.ui.screens.HomeScreen
 import com.personal.studentlifemanager.ui.screens.LoginScreen
+import com.personal.studentlifemanager.ui.screens.CategoryScreen
+import com.personal.studentlifemanager.ui.screens.ExpenseAnalyticsScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,16 +29,17 @@ class MainActivity : ComponentActivity() {
                 val startDestination = if (currentUser == null) "login" else "home"
 
                 NavHost(navController = navController, startDestination = startDestination) {
-                    // Màn hình Đăng nhập
+
+                    // 1. Màn hình Đăng nhập
                     composable("login") {
                         LoginScreen(onLoginSuccess = {
                             navController.navigate("home") {
-                                popUpTo("login") { inclusive = true } // Đăng nhập xong thì không quay lại trang login được nữa
+                                popUpTo("login") { inclusive = true }
                             }
                         })
                     }
 
-                    // Màn hình Home
+                    // 2. Màn hình Home
                     composable("home") {
                         HomeScreen(
                             userName = auth.currentUser?.displayName ?: "Sinh viên",
@@ -48,20 +50,28 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onNavigateToExpense = {
-                                navController.navigate("expense") // Lệnh nhảy sang trang chi tiêu
+                                navController.navigate("expense")
                             }
                         )
                     }
 
-                    // Màn hình Module 1: Chi tiêu
+                    // 3. Màn hình Chi tiêu (Trang chính)
                     composable("expense") {
                         ExpenseScreen(
                             onBack = { navController.popBackStack() },
-                            onNavigateToAnalytics = { navController.navigate("expense_analytics") } // Mở trang so sánh
+                            onNavigateToAnalytics = { navController.navigate("expense_analytics") }, // Nút biểu đồ
+                            onNavigateToCategory = { navController.navigate("category_manage") }     // Nút danh sách (cái bạn vừa bấm)
                         )
                     }
 
-                    // Màn hình Phân tích so sánh (Trang sâu)
+                    // 4. Màn hình Quản lý Danh mục (Tránh bị văng app)
+                    composable("category_manage") {
+                        CategoryScreen(
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    // 5. Màn hình Báo cáo tài chính (Analytics)
                     composable("expense_analytics") {
                         ExpenseAnalyticsScreen(
                             onBack = { navController.popBackStack() }
