@@ -3,13 +3,15 @@ package com.personal.studentlifemanager.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow // Import quan trọng cho vuốt ngang
+import androidx.compose.foundation.lazy.items   // Import quan trọng để sửa lỗi "Unresolved reference 'items'"
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,17 +28,20 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExpenseScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = viewModel()) {
+fun ExpenseScreen(
+    onBack: () -> Unit,
+    onNavigateToAnalytics: () -> Unit,
+    viewModel: ExpenseViewModel = viewModel()
+) {
     var showBottomSheet by remember { mutableStateOf(false) }
 
-    // Kéo dữ liệu từ ViewModel ra
     val transactions = viewModel.transactions
-
-    // Tự động tính toán tổng số tiền chi tiêu
-    val totalExpense = transactions.filter { !it.isIncome }.sumOf { it.amount }
-
-    // Định dạng tiền tệ VNĐ cho đẹp
     val formatter = NumberFormat.getCurrencyInstance(Locale("vi", "VN"))
+
+    // TÍNH TOÁN DỮ LIỆU THẬT TỪ FIREBASE
+    val totalIncome = transactions.filter { it.isIncome }.sumOf { it.amount }
+    val totalExpense = transactions.filter { !it.isIncome }.sumOf { it.amount }
+    val balance = totalIncome - totalExpense
 
     Scaffold(
         topBar = {
@@ -45,6 +50,11 @@ fun ExpenseScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = viewModel())
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Quay lại")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onNavigateToAnalytics) {
+                        Icon(Icons.Default.Analytics, contentDescription = "Báo cáo", tint = MaterialTheme.colorScheme.primary)
                     }
                 }
             )
@@ -58,23 +68,35 @@ fun ExpenseScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = viewModel())
             }
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
+        Column(modifier = Modifier.padding(padding).padding(horizontal = 16.dp).fillMaxSize()) {
 
-            // CARD HIỂN THỊ TỔNG TIỀN
+            // CARD TỔNG QUAN
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(20.dp)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Tổng chi tiêu tháng này", style = MaterialTheme.typography.labelLarge)
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.padding(20.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Số dư hiện tại", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
                     Text(
-                        text = formatter.format(totalExpense),
+                        text = formatter.format(balance),
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(horizontalAlignment = Alignment.Start) {
+                            Text("Thu nhập", style = MaterialTheme.typography.labelMedium)
+                            Text(formatter.format(totalIncome), fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("Chi tiêu", style = MaterialTheme.typography.labelMedium)
+                            Text(formatter.format(totalExpense), fontWeight = FontWeight.Bold, color = Color(0xFFF44336))
+                        }
+                    }
                 }
             }
 
@@ -82,11 +104,10 @@ fun ExpenseScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = viewModel())
             Text("Lịch sử giao dịch", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
 
-            // DANH SÁCH LỊCH SỬ GIAO DỊCH
             if (transactions.isEmpty()) {
-                Text("Chưa có giao dịch nào.", color = Color.Gray, modifier = Modifier.padding(top = 16.dp))
+                Text("Chưa có giao dịch nào. Hãy bấm dấu + để thêm nhé!", color = Color.Gray, modifier = Modifier.padding(top = 16.dp))
             } else {
-                LazyColumn {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(transactions) { transaction ->
                         TransactionItem(transaction, viewModel, formatter)
                     }
@@ -99,15 +120,12 @@ fun ExpenseScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = viewModel())
                 onDismissRequest = { showBottomSheet = false },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ) {
-                AddTransactionForm(viewModel = viewModel) {
-                    showBottomSheet = false
-                }
+                AddTransactionForm(viewModel = viewModel) { showBottomSheet = false }
             }
         }
     }
 }
 
-// KHUNG HIỂN THỊ 1 DÒNG GIAO DỊCH
 @Composable
 fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, formatter: NumberFormat) {
     val category = viewModel.defaultCategories.find { it.id == transaction.categoryId }
@@ -116,7 +134,7 @@ fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, forma
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
@@ -124,40 +142,32 @@ fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, forma
             modifier = Modifier.padding(16.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Hình tròn đại diện danh mục
             Box(
                 modifier = Modifier.size(40.dp).background(Color(android.graphics.Color.parseColor(category?.colorHex ?: "#CCCCCC")), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(category?.name?.take(1) ?: "?", fontWeight = FontWeight.Bold, color = Color.DarkGray)
             }
-
             Spacer(modifier = Modifier.width(16.dp))
-
             Column(modifier = Modifier.weight(1f)) {
                 Text(category?.name ?: "Khác", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 if (transaction.note.isNotEmpty()) {
                     Text(transaction.note, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                 }
             }
-
-            Text(
-                text = "$sign${formatter.format(transaction.amount)}",
-                color = amountColor,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
-            )
+            Text(text = "$sign${formatter.format(transaction.amount)}", color = amountColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
     }
 }
 
-// ... (Đoạn hàm AddTransactionForm bên dưới giữ nguyên y hệt như code cũ của bạn)
 @Composable
 fun AddTransactionForm(viewModel: ExpenseViewModel, onSaved: () -> Unit) {
     var amount by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var isIncome by remember { mutableStateOf(false) }
-    var selectedCategory by remember { mutableStateOf(viewModel.defaultCategories.first()) }
+
+    val availableCategories = viewModel.defaultCategories.filter { it.isIncome == isIncome }
+    var selectedCategory by remember(isIncome) { mutableStateOf(availableCategories.firstOrNull()) }
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp),
@@ -180,6 +190,26 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, onSaved: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Cập nhật thành LazyRow sạch sẽ (Đã import đúng androidx.compose.foundation.lazy.items)
+        Text("Danh mục:", style = MaterialTheme.typography.labelMedium, modifier = Modifier.align(Alignment.Start).padding(start = 4.dp))
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(availableCategories) { cat ->
+                FilterChip(
+                    selected = selectedCategory?.id == cat.id,
+                    onClick = { selectedCategory = cat },
+                    label = { Text(cat.name) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(android.graphics.Color.parseColor(cat.colorHex))
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         OutlinedTextField(
             value = amount, onValueChange = { amount = it }, label = { Text("Số tiền (VNĐ)") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth()
@@ -197,8 +227,8 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, onSaved: () -> Unit) {
         Button(
             onClick = {
                 val parsedAmount = amount.toDoubleOrNull() ?: 0.0
-                if (parsedAmount > 0) {
-                    viewModel.addTransaction(parsedAmount, note, selectedCategory.id, isIncome, onSaved)
+                if (parsedAmount > 0 && selectedCategory != null) {
+                    viewModel.addTransaction(parsedAmount, note, selectedCategory!!.id, isIncome, onSaved)
                 }
             },
             modifier = Modifier.fillMaxWidth().height(50.dp)

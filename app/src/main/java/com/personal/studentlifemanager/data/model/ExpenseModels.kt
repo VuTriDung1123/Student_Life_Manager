@@ -1,20 +1,26 @@
 package com.personal.studentlifemanager.data.model
 
-// Data class cho Danh mục
+import com.google.firebase.firestore.PropertyName
+
 data class Category(
-    val id: String = "",
-    val name: String = "",
-    val iconName: String = "",
-    val colorHex: String = "",
-    val isIncome: Boolean = false
+    var id: String = "",
+    var name: String = "",
+    var iconName: String = "",
+    var colorHex: String = "",
+    // Ép Firebase phải lưu và đọc đúng chữ "isIncome"
+    @get:PropertyName("isIncome")
+    @set:PropertyName("isIncome")
+    var isIncome: Boolean = false
 )
 
-// Data class cho Giao dịch
 data class Transaction(
-    val id: String = "",
-    val amount: Double = 0.0,
-    val note: String = "",
-    val date: Long = 0L,
-    val categoryId: String = "",
-    val isIncome: Boolean = false
+    var id: String = "",
+    var amount: Double = 0.0,
+    var note: String = "",
+    var date: Long = 0L,
+    var categoryId: String = "",
+    // Ép Firebase phải lưu và đọc đúng chữ "isIncome"
+    @get:PropertyName("isIncome")
+    @set:PropertyName("isIncome")
+    var isIncome: Boolean = false
 )
