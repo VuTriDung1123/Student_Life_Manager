@@ -1,10 +1,12 @@
 package com.personal.studentlifemanager.ui.screens
 
+import android.app.DatePickerDialog
+import android.widget.DatePicker
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow // Import quan trọng cho vuốt ngang
-import androidx.compose.foundation.lazy.items   // Import quan trọng để sửa lỗi "Unresolved reference 'items'"
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -12,18 +14,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.studentlifemanager.data.model.Transaction
+import com.personal.studentlifemanager.data.repository.ExpenseRepository
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,6 +39,7 @@ import java.util.Locale
 fun ExpenseScreen(
     onBack: () -> Unit,
     onNavigateToAnalytics: () -> Unit,
+    onNavigateToCategory: () -> Unit = {}, // Thêm nút sang trang Category
     viewModel: ExpenseViewModel = viewModel()
 ) {
     var showBottomSheet by remember { mutableStateOf(false) }
@@ -38,7 +47,6 @@ fun ExpenseScreen(
     val transactions = viewModel.transactions
     val formatter = NumberFormat.getCurrencyInstance(Locale("vi", "VN"))
 
-    // TÍNH TOÁN DỮ LIỆU THẬT TỪ FIREBASE
     val totalIncome = transactions.filter { it.isIncome }.sumOf { it.amount }
     val totalExpense = transactions.filter { !it.isIncome }.sumOf { it.amount }
     val balance = totalIncome - totalExpense
@@ -53,6 +61,11 @@ fun ExpenseScreen(
                     }
                 },
                 actions = {
+                    // Nút sang trang Quản lý Danh mục
+                    IconButton(onClick = onNavigateToCategory) {
+                        Icon(Icons.Default.List, contentDescription = "Danh mục", tint = MaterialTheme.colorScheme.primary)
+                    }
+                    // Nút sang trang Báo cáo Analytics
                     IconButton(onClick = onNavigateToAnalytics) {
                         Icon(Icons.Default.Analytics, contentDescription = "Báo cáo", tint = MaterialTheme.colorScheme.primary)
                     }
@@ -128,9 +141,12 @@ fun ExpenseScreen(
 
 @Composable
 fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, formatter: NumberFormat) {
-    val category = viewModel.defaultCategories.find { it.id == transaction.categoryId }
+    // ĐÃ SỬA: dùng viewModel.categories thay vì defaultCategories
+    val category = viewModel.categories.find { it.id == transaction.categoryId }
     val amountColor = if (transaction.isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
     val sign = if (transaction.isIncome) "+" else "-"
+
+    val dateString = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(transaction.date)
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -154,8 +170,15 @@ fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, forma
                 if (transaction.note.isNotEmpty()) {
                     Text(transaction.note, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                 }
+                Text(dateString, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
             }
-            Text(text = "$sign${formatter.format(transaction.amount)}", color = amountColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Column(horizontalAlignment = Alignment.End) {
+                Text(text = "$sign${formatter.format(transaction.amount)}", color = amountColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                // Nút xóa
+                IconButton(onClick = { viewModel.deleteTransaction(transaction.id) }, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = "Xóa", tint = Color.LightGray)
+                }
+            }
         }
     }
 }
@@ -166,8 +189,27 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, onSaved: () -> Unit) {
     var note by remember { mutableStateOf("") }
     var isIncome by remember { mutableStateOf(false) }
 
-    val availableCategories = viewModel.defaultCategories.filter { it.isIncome == isIncome }
-    var selectedCategory by remember(isIncome) { mutableStateOf(availableCategories.firstOrNull()) }
+    // ĐÃ SỬA: dùng viewModel.categories thay vì defaultCategories
+    val availableCategories = viewModel.categories.filter { it.isIncome == isIncome }
+    var selectedCategory by remember(isIncome, availableCategories) { mutableStateOf(availableCategories.firstOrNull()) }
+
+    // Xử lý Lịch
+    val context = LocalContext.current
+    val calendar = Calendar.getInstance()
+    var selectedDateMillis by remember { mutableStateOf(calendar.timeInMillis) }
+    val dateString = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateMillis)
+
+    val datePickerDialog = DatePickerDialog(
+        context,
+        { _: DatePicker, year: Int, month: Int, dayOfMonth: Int ->
+            val newCalendar = Calendar.getInstance()
+            newCalendar.set(year, month, dayOfMonth)
+            selectedDateMillis = newCalendar.timeInMillis
+        },
+        calendar.get(Calendar.YEAR),
+        calendar.get(Calendar.MONTH),
+        calendar.get(Calendar.DAY_OF_MONTH)
+    )
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp),
@@ -190,7 +232,6 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, onSaved: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Cập nhật thành LazyRow sạch sẽ (Đã import đúng androidx.compose.foundation.lazy.items)
         Text("Danh mục:", style = MaterialTheme.typography.labelMedium, modifier = Modifier.align(Alignment.Start).padding(start = 4.dp))
         LazyRow(
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -202,13 +243,19 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, onSaved: () -> Unit) {
                     onClick = { selectedCategory = cat },
                     label = { Text(cat.name) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(android.graphics.Color.parseColor(cat.colorHex))
+                        selectedContainerColor = try { Color(android.graphics.Color.parseColor(cat.colorHex)) } catch (e: Exception) { Color.LightGray }
                     )
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(onClick = { datePickerDialog.show() }, modifier = Modifier.fillMaxWidth()) {
+            Text("Ngày giao dịch: $dateString", color = MaterialTheme.colorScheme.onSurface)
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         OutlinedTextField(
             value = amount, onValueChange = { amount = it }, label = { Text("Số tiền (VNĐ)") },
@@ -228,7 +275,14 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, onSaved: () -> Unit) {
             onClick = {
                 val parsedAmount = amount.toDoubleOrNull() ?: 0.0
                 if (parsedAmount > 0 && selectedCategory != null) {
-                    viewModel.addTransaction(parsedAmount, note, selectedCategory!!.id, isIncome, onSaved)
+                    val transaction = Transaction(
+                        amount = parsedAmount,
+                        note = note,
+                        date = selectedDateMillis,
+                        categoryId = selectedCategory!!.id,
+                        isIncome = isIncome
+                    )
+                    ExpenseRepository().addTransaction(transaction, onSuccess = onSaved, onFailure = {})
                 }
             },
             modifier = Modifier.fillMaxWidth().height(50.dp)
