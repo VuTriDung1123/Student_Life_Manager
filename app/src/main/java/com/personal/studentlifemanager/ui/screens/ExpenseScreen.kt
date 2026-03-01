@@ -6,7 +6,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
-import android.widget.DatePicker
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,6 +43,12 @@ import java.io.OutputStreamWriter
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import android.app.TimePickerDialog
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
+import android.widget.DatePicker
 
 @Composable
 fun connectivityState(context: Context): State<Boolean> {
@@ -110,7 +115,52 @@ fun ExpenseScreen(
                 title = { Text("Chi tiêu", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
-                    // 🔥 CHỈ GIỮ LẠI ĐÚNG NÚT BẢO MẬT TRÊN TOP BAR
+                    // 🔥 1. NÚT CHỌN GIỜ NHẮC NHỞ MỚI THÊM
+                    IconButton(onClick = {
+                        val sharedPref = context.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+                        val currentHour = sharedPref.getInt("reminder_hour", 20)
+                        val currentMinute = sharedPref.getInt("reminder_minute", 0)
+
+                        TimePickerDialog(
+                            context,
+                            { _, selectedHour, selectedMinute ->
+                                // Lưu giờ mới vào máy
+                                sharedPref.edit()
+                                    .putInt("reminder_hour", selectedHour)
+                                    .putInt("reminder_minute", selectedMinute)
+                                    .apply()
+
+                                // Cập nhật lại WorkManager ngay lập tức
+                                val currentDate = Calendar.getInstance()
+                                val dueDate = Calendar.getInstance().apply {
+                                    set(Calendar.HOUR_OF_DAY, selectedHour)
+                                    set(Calendar.MINUTE, selectedMinute)
+                                    set(Calendar.SECOND, 0)
+                                }
+                                if (dueDate.before(currentDate)) {
+                                    dueDate.add(Calendar.HOUR_OF_DAY, 24)
+                                }
+
+                                val timeDiff = dueDate.timeInMillis - currentDate.timeInMillis
+                                val dailyWorkRequest = PeriodicWorkRequestBuilder<com.personal.studentlifemanager.worker.ReminderWorker>(24, TimeUnit.HOURS)
+                                    .setInitialDelay(timeDiff, TimeUnit.MILLISECONDS)
+                                    .build()
+
+                                WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                                    "DailyExpenseReminder",
+                                    ExistingPeriodicWorkPolicy.UPDATE,
+                                    dailyWorkRequest
+                                )
+
+                                Toast.makeText(context, "Đã hẹn giờ nhắc nhở hằng ngày lúc ${String.format("%02d:%02d", selectedHour, selectedMinute)}", Toast.LENGTH_SHORT).show()
+                            },
+                            currentHour, currentMinute, true // true để hiển thị định dạng 24h
+                        ).show()
+                    }) {
+                        Icon(Icons.Default.NotificationsActive, "Hẹn giờ", tint = MaterialTheme.colorScheme.primary)
+                    }
+
+                    // 🔥 2. NÚT BẢO MẬT CON MẮT (Cũ)
                     IconButton(onClick = {
                         // Logic gọi vân tay của bạn giữ nguyên ở đây nhé
                         viewModel.toggleBalanceVisibility()
