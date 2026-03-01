@@ -44,7 +44,8 @@ fun PomodoroScreen(
                 focusTime = sharedPreferences.getInt("focus_time", 25),
                 shortBreak = sharedPreferences.getInt("short_break", 5),
                 sessionsCount = sharedPreferences.getInt("sessions_count", 4),
-                longBreak = sharedPreferences.getInt("long_break", 15)
+                longBreak = sharedPreferences.getInt("long_break", 15),
+                autoStart = sharedPreferences.getBoolean("auto_start", true)
             )
         )
     }
@@ -133,6 +134,13 @@ fun PomodoroScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
             Text("Nhật ký hôm nay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            // 🔥 HIỂN THỊ THỐNG KÊ CƠ BẢN
+            val totalCompleted = todayRecords.count { it.isCompleted }
+            val totalMinutes = todayRecords.filter { it.isCompleted }.sumOf { it.actualFocusMinutes }
+            Text(
+                text = "Đã hoàn thành: $totalCompleted phiên • Tổng thời gian: $totalMinutes phút",
+                fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium
+            )
             Spacer(modifier = Modifier.height(8.dp))
 
             LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -157,6 +165,7 @@ fun PomodoroScreen(
                     .putInt("short_break", newConfig.shortBreak)
                     .putInt("sessions_count", newConfig.sessionsCount)
                     .putInt("long_break", newConfig.longBreak)
+                    .putBoolean("auto_start", newConfig.autoStart)
                     .apply()
             }
         )
@@ -173,25 +182,16 @@ fun PomodoroSettingsDialog(
     var shortBreak by remember { mutableStateOf(currentConfig.shortBreak.toString()) }
     var sessionsCount by remember { mutableStateOf(currentConfig.sessionsCount.toString()) }
     var longBreak by remember { mutableStateOf(currentConfig.longBreak.toString()) }
+    var autoStart by remember { mutableStateOf(currentConfig.autoStart) } // Thêm state này
 
-    val presets = listOf(
-        PomodoroConfig(25, 5, 4, 15),
-        PomodoroConfig(30, 5, 4, 15),
-        PomodoroConfig(45, 10, 4, 20)
-    )
+    val presets = listOf(PomodoroConfig(25, 5, 4, 15), PomodoroConfig(30, 5, 4, 15), PomodoroConfig(45, 10, 4, 20))
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Cài đặt Pomodoro", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Cancel, contentDescription = "Đóng", tint = Color.Gray)
-                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Cancel, "Đóng", tint = Color.Gray) }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -203,34 +203,74 @@ fun PomodoroSettingsDialog(
                     ConfigInputField("Số phiên", sessionsCount, { sessionsCount = it }, Modifier.weight(1f))
                     ConfigInputField("Nghỉ dài", longBreak, { longBreak = it }, Modifier.weight(1f))
                 }
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 🔥 CÔNG TẮC BẬT TẮT AUTO-START
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Tự động bắt đầu chuyển phiên", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Switch(checked = autoStart, onCheckedChange = { autoStart = it })
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     presets.forEach { preset ->
                         val isSelected = preset.focusTime.toString() == focusTime && preset.shortBreak.toString() == shortBreak && preset.sessionsCount.toString() == sessionsCount && preset.longBreak.toString() == longBreak
                         Surface(
-                            onClick = {
-                                focusTime = preset.focusTime.toString(); shortBreak = preset.shortBreak.toString(); sessionsCount = preset.sessionsCount.toString(); longBreak = preset.longBreak.toString()
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isSelected) Color(0xFF4CAF50) else Color(0xFFE8F5E9),
-                            modifier = Modifier.height(36.dp)
-                        ) {
-                            Box(modifier = Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-                                Text("${preset.focusTime}/${preset.shortBreak}/${preset.sessionsCount}/${preset.longBreak}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isSelected) Color.White else Color(0xFF2E7D32))
-                            }
-                        }
+                            onClick = { focusTime = preset.focusTime.toString(); shortBreak = preset.shortBreak.toString(); sessionsCount = preset.sessionsCount.toString(); longBreak = preset.longBreak.toString() },
+                            shape = RoundedCornerShape(8.dp), color = if (isSelected) Color(0xFF4CAF50) else Color(0xFFE8F5E9), modifier = Modifier.height(36.dp)
+                        ) { Box(modifier = Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) { Text("${preset.focusTime}/${preset.shortBreak}/${preset.sessionsCount}/${preset.longBreak}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isSelected) Color.White else Color(0xFF2E7D32)) } }
                     }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
                     onClick = {
-                        val newConfig = PomodoroConfig(focusTime.toIntOrNull() ?: 25, shortBreak.toIntOrNull() ?: 5, sessionsCount.toIntOrNull() ?: 4, longBreak.toIntOrNull() ?: 15)
+                        val newConfig = PomodoroConfig(focusTime.toIntOrNull() ?: 25, shortBreak.toIntOrNull() ?: 5, sessionsCount.toIntOrNull() ?: 4, longBreak.toIntOrNull() ?: 15, autoStart)
                         onSave(newConfig)
                     },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57C00)),
-                    shape = RoundedCornerShape(12.dp)
+                    modifier = Modifier.fillMaxWidth().height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57C00)), shape = RoundedCornerShape(12.dp)
                 ) { Text("Lưu cấu hình", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
+
+// Thay đổi tham số hàm RecordItem để nhận lệnh Xóa
+@Composable
+fun RecordItem(record: PomodoroRecord, pomodoroViewModel: PomodoroViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
+    val calendar = Calendar.getInstance().apply { timeInMillis = record.startTime }
+    val hour = calendar.get(Calendar.HOUR_OF_DAY)
+    val sessionName = when (hour) { in 0..11 -> "Buổi sáng"; in 12..17 -> "Buổi chiều"; else -> "Buổi tối" }
+    val timeString = SimpleDateFormat("HH:mm", Locale.getDefault()).format(record.startTime)
+    val statusColor = if (record.isCompleted) Color(0xFF4CAF50) else Color(0xFFF44336)
+    val statusIcon = if (record.isCompleted) Icons.Default.CheckCircle else Icons.Default.Cancel
+
+    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(36.dp))
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(if (record.taskName.isNotEmpty()) record.taskName else "Tự do", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                Text("$timeString ($sessionName)", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 2.dp))
+                Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
+                    Text(if (record.isCompleted) "Hoàn thành" else "Thất bại", color = statusColor, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    Text(" • ${record.actualFocusMinutes} phút", fontSize = 14.sp, color = Color.DarkGray, modifier = Modifier.padding(start = 6.dp))
+                }
+            }
+
+            // 🔥 NÚT XÓA BÊN PHẢI
+            var showDeleteConfirm by remember { mutableStateOf(false) }
+            IconButton(onClick = { showDeleteConfirm = true }) {
+                Icon(Icons.Default.Cancel, contentDescription = "Xóa", tint = Color.LightGray)
+            }
+
+            if (showDeleteConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteConfirm = false },
+                    title = { Text("Xóa phiên này?") },
+                    text = { Text("Dữ liệu sau khi xóa sẽ không thể khôi phục.") },
+                    confirmButton = { TextButton(onClick = { showDeleteConfirm = false; pomodoroViewModel.deleteRecord(record.id) }) { Text("Xóa", color = Color.Red) } },
+                    dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Hủy") } }
+                )
             }
         }
     }
@@ -247,37 +287,4 @@ fun ConfigInputField(label: String, value: String, onValueChange: (String) -> Un
         modifier = modifier,
         textStyle = LocalTextStyle.current.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontWeight = FontWeight.Bold)
     )
-}
-
-@Composable
-fun RecordItem(record: PomodoroRecord) {
-    val calendar = Calendar.getInstance().apply { timeInMillis = record.startTime }
-    val hour = calendar.get(Calendar.HOUR_OF_DAY)
-    val sessionName = when (hour) { in 0..11 -> "Buổi sáng"; in 12..17 -> "Buổi chiều"; else -> "Buổi tối" }
-    val timeString = SimpleDateFormat("HH:mm", Locale.getDefault()).format(record.startTime)
-    val statusColor = if (record.isCompleted) Color(0xFF4CAF50) else Color(0xFFF44336)
-    val statusIcon = if (record.isCompleted) Icons.Default.CheckCircle else Icons.Default.Cancel
-    val statusText = if (record.isCompleted) "Hoàn thành" else "Thất bại"
-
-    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(36.dp))
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                // Hiển thị tên Task in đậm rõ to
-                Text(
-                    text = if (record.taskName.isNotEmpty()) record.taskName else "Tự do",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text("$timeString ($sessionName)", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 2.dp))
-                Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
-                    Text(statusText, color = statusColor, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                    Text(" • ${record.actualFocusMinutes} phút", fontSize = 14.sp, color = Color.DarkGray, modifier = Modifier.padding(start = 6.dp))
-                }
-                Text("Cấu hình: ${record.configFocus}/${record.configShort}/${record.configSessions}/${record.configLong}", fontSize = 11.sp, color = Color.Gray, modifier = Modifier.padding(top = 4.dp))
-            }
-        }
-    }
 }
