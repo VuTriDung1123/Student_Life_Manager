@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout // Sửa icon logout
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.* // Import tất cả icon mặc định
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -19,7 +20,9 @@ import com.personal.studentlifemanager.ui.components.ModuleCard
 fun HomeScreen(
     userName: String,
     onLogout: () -> Unit,
-    onNavigateToExpense: () -> Unit // Thêm dòng này
+    onNavigateToExpense: () -> Unit,
+    onNavigateToPomodoro: () -> Unit,
+
 ) {
     Scaffold(
         topBar = {
@@ -55,11 +58,19 @@ fun HomeScreen(
                         onNavigateToExpense() // Khi bấm nút thì gọi hàm này
                     }
                 }
-                item { ModuleCard("Pomodoro", Icons.Default.Schedule, Color(0xFFFF5722)) {} }
-                item { ModuleCard("Thẻ nhớ", Icons.Default.MenuBook, Color(0xFF2196F3)) {} }
+                item {
+                    ModuleCard(
+                        title = "Pomodoro",
+                        icon = Icons.Default.Schedule,
+                        color = Color(0xFFFF5722)
+                    ) {
+                        onNavigateToPomodoro()
+                    }
+                }
+                item { ModuleCard("Thẻ nhớ", Icons.AutoMirrored.Filled.MenuBook, Color(0xFF2196F3)) {} }
                 item { ModuleCard("Thói quen", Icons.Default.TaskAlt, Color(0xFF9C27B0)) {} }
                 item(span = { GridItemSpan(2) }) {
-                    ModuleCard("UTH Helper (Bản đồ & Cẩm nang)", Icons.Default.Place, Color(0xFFFFC107)) {}
+                    ModuleCard("Helper (Bản đồ & Cẩm nang)", Icons.Default.Place, Color(0xFFFFC107)) {}
                 }
             }
         }
