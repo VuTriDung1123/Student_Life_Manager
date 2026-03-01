@@ -9,6 +9,11 @@ import com.personal.studentlifemanager.data.model.Transaction
 import com.personal.studentlifemanager.data.model.Wallet
 import com.personal.studentlifemanager.data.repository.ExpenseRepository
 import java.util.Calendar
+import android.content.Context
+import android.net.Uri
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 
 class ExpenseViewModel : ViewModel() {
     private val repository = ExpenseRepository()
@@ -163,5 +168,56 @@ class ExpenseViewModel : ViewModel() {
 
     fun toggleBalanceVisibility() {
         isBalanceHidden = !isBalanceHidden
+    }
+    // ==========================================
+    // --- KHU VỰC 6: AI OCR QUÉT HÓA ĐƠN ---
+    // ==========================================
+    fun processReceiptImage(context: Context, uri: Uri, onResult: (String) -> Unit, onError: () -> Unit) {
+        try {
+            val image = InputImage.fromFilePath(context, uri)
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+            recognizer.process(image)
+                .addOnSuccessListener { visionText ->
+                    val text = visionText.text
+                    // Thuật toán: Lọc tìm con số lớn nhất
+                    val extractedAmount = extractMaxAmount(text)
+                    if (extractedAmount > 0) {
+                        onResult(extractedAmount.toLong().toString())
+                    } else {
+                        onError()
+                    }
+                }
+                .addOnFailureListener {
+                    onError()
+                }
+        } catch (e: Exception) {
+            onError()
+        }
+    }
+
+    private fun extractMaxAmount(text: String): Double {
+        // 1. Tìm các số có dấu phân cách (VD: 88.000, 1.500.000)
+        // 2. Hoặc các số viết liền từ 4 đến 9 chữ số (VD: 88000)
+        val regex = Regex("""\b[1-9]\d{0,2}(?:[.,]\d{3})+\b|\b[1-9]\d{3,8}\b""")
+        val matches = regex.findAll(text)
+
+        var maxAmount = 0.0
+        for (match in matches) {
+            // Gỡ bỏ dấu chấm, dấu phẩy để biến thành số thực tế
+            val numStr = match.value.replace(",", "").replace(".", "")
+            val num = numStr.toDoubleOrNull() ?: 0.0
+
+            // 🔥 THUẬT TOÁN LỌC VÀNG CHO TIỀN VNĐ
+            // 1. num > 1000: Hóa đơn ít khi nào dưới 1k
+            // 2. num < 1,000,000,000: Dưới 1 tỷ để tránh nhầm mã vạch/ID dài ngoằng
+            // 3. num % 100 == 0.0: TIỀN VNĐ PHẢI CHIA HẾT CHO 100 (Loại bỏ ngay 98.198 hay 12.181)
+            if (num > 1000 && num < 1000000000 && num % 100 == 0.0) {
+                if (num > maxAmount) {
+                    maxAmount = num
+                }
+            }
+        }
+        return maxAmount
     }
 }
