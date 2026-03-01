@@ -2,6 +2,15 @@ package com.personal.studentlifemanager.data.model
 
 import com.google.firebase.firestore.PropertyName
 
+
+// --- THÊM CLASS VÍ TIỀN MỚI ---
+data class Wallet(
+    var id: String = "",
+    var name: String = "",
+    var colorHex: String = "#4CAF50" // Màu mặc định
+)
+
+
 data class Category(
     var id: String = "",
     var name: String = "",
@@ -22,5 +31,6 @@ data class Transaction(
     // Ép Firebase phải lưu và đọc đúng chữ "isIncome"
     @get:PropertyName("isIncome")
     @set:PropertyName("isIncome")
-    var isIncome: Boolean = false
+    var isIncome: Boolean = false,
+    var walletId: String = ""
 )
