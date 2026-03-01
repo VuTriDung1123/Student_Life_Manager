@@ -41,6 +41,7 @@ fun ExpenseScreen(
     onNavigateToAnalytics: () -> Unit,
     onNavigateToCategory: () -> Unit,
     onNavigateToBudget: () -> Unit,
+    onNavigateToRecurring: () -> Unit,
     navController: NavController = rememberNavController(),
     viewModel: ExpenseViewModel = viewModel()
 ) {
@@ -61,7 +62,9 @@ fun ExpenseScreen(
                 title = { Text("Quản lý chi tiêu", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
-                    // Nút Ngân sách đã được sửa onClick
+                    IconButton(onClick = onNavigateToRecurring) {
+                        Icon(Icons.Default.Autorenew, "Định kỳ", tint = MaterialTheme.colorScheme.primary)
+                    }
                     IconButton(onClick = onNavigateToBudget) {
                         Icon(Icons.Default.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary)
                     }

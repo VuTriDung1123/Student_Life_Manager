@@ -44,3 +44,23 @@ data class Budget(
     var month: Int = 0, // Áp dụng cho tháng nào
     var year: Int = 0 // Áp dụng cho năm nào
 )
+
+// --- THÊM CLASS GIAO DỊCH LẶP LẠI (TRẬN 4) ---
+data class RecurringExpense(
+    var id: String = "",
+    var amount: Double = 0.0,
+    var note: String = "",
+    var categoryId: String = "",
+    var walletId: String = "",
+    @get:PropertyName("isIncome")
+    @set:PropertyName("isIncome")
+    var isIncome: Boolean = false,
+
+    // Ngày tiếp theo sẽ tự động kích hoạt
+    var nextExecutionTime: Long = 0L,
+
+    // Cho phép người dùng Bật/Tắt chế độ tự động
+    @get:PropertyName("isActive")
+    @set:PropertyName("isActive")
+    var isActive: Boolean = true
+)
