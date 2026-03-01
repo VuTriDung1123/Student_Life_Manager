@@ -1,7 +1,14 @@
 package com.personal.studentlifemanager.ui.screens
 
 import android.app.DatePickerDialog
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.widget.DatePicker
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -27,12 +34,29 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
-import androidx.navigation.compose.rememberNavController
 import com.personal.studentlifemanager.data.model.Transaction
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
+
+// --- HÀM LẮNG NGHE MẠNG OFFLINE/ONLINE ---
+@Composable
+fun connectivityState(context: Context): State<Boolean> {
+    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val isConnected = remember {
+        mutableStateOf(connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true)
+    }
+
+    DisposableEffect(context) {
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { isConnected.value = true }
+            override fun onLost(network: Network) { isConnected.value = false }
+        }
+        connectivityManager.registerDefaultNetworkCallback(callback)
+        onDispose { connectivityManager.unregisterNetworkCallback(callback) }
+    }
+    return isConnected
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,7 +66,6 @@ fun ExpenseScreen(
     onNavigateToCategory: () -> Unit,
     onNavigateToBudget: () -> Unit,
     onNavigateToRecurring: () -> Unit,
-    navController: NavController = rememberNavController(),
     viewModel: ExpenseViewModel = viewModel()
 ) {
     var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
@@ -50,8 +73,16 @@ fun ExpenseScreen(
 
     val transactions = viewModel.filteredTransactions
     val formatter = NumberFormat.getCurrencyInstance(Locale("vi", "VN"))
+    val context = LocalContext.current
 
-    // Chỉ tính Thu/Chi thực tế, bỏ qua Chuyển tiền
+    // 🔥 Lắng nghe trạng thái Offline
+    val isOnline by connectivityState(context)
+
+    // 🔥 HÀM CHE SỐ TIỀN (SECURITY)
+    val displayMoney = { amount: Double ->
+        if (viewModel.isBalanceHidden) "****** ₫" else formatter.format(amount)
+    }
+
     val totalIncome = transactions.filter { it.isIncome && !it.isTransfer }.sumOf { it.amount }
     val totalExpense = transactions.filter { !it.isIncome && !it.isTransfer }.sumOf { it.amount }
     val balance = totalIncome - totalExpense
@@ -62,95 +93,102 @@ fun ExpenseScreen(
                 title = { Text("Quản lý chi tiêu", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
-                    IconButton(onClick = onNavigateToRecurring) {
-                        Icon(Icons.Default.Autorenew, "Định kỳ", tint = MaterialTheme.colorScheme.primary)
+                    // 🔥 NÚT ẨN/HIỆN SỐ TIỀN BẰNG CON MẮT
+                    IconButton(onClick = { viewModel.toggleBalanceVisibility() }) {
+                        Icon(
+                            imageVector = if (viewModel.isBalanceHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = "Bảo mật",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
-                    IconButton(onClick = onNavigateToBudget) {
-                        Icon(Icons.Default.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary)
-                    }
+                    IconButton(onClick = onNavigateToRecurring) { Icon(Icons.Default.Autorenew, null, tint = MaterialTheme.colorScheme.primary) }
+                    IconButton(onClick = onNavigateToBudget) { Icon(Icons.Default.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary) }
                     IconButton(onClick = onNavigateToCategory) { Icon(Icons.Default.List, null, tint = MaterialTheme.colorScheme.primary) }
                     IconButton(onClick = onNavigateToAnalytics) { Icon(Icons.Default.Analytics, null, tint = MaterialTheme.colorScheme.primary) }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = {
-                editingTransaction = null
-                showBottomSheet = true
-            }) { Icon(Icons.Default.Add, null) }
+            FloatingActionButton(onClick = { editingTransaction = null; showBottomSheet = true }) {
+                Icon(Icons.Default.Add, null)
+            }
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).padding(horizontal = 16.dp).fillMaxSize()) {
+        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
 
-            // 1. THANH CHUYỂN THÁNG
-            MonthNavigation(viewModel)
-
-            // 2. DANH SÁCH SỐ DƯ TỪNG VÍ (Nằm ngang)
-            Text("Số dư các ví", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            LazyRow(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(viewModel.wallets) { wallet ->
-                    val walletBalance = viewModel.getWalletBalance(wallet.id)
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = try { Color(android.graphics.Color.parseColor(wallet.colorHex)).copy(alpha = 0.2f) } catch(e:Exception){Color.LightGray})
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(wallet.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(formatter.format(walletBalance), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
-                        }
-                    }
+            // 🔥 BANNER THÔNG BÁO OFFLINE FIRST
+            AnimatedVisibility(visible = !isOnline, enter = expandVertically(), exit = shrinkVertically()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFFFFF9C4)).padding(vertical = 8.dp, horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.CloudOff, contentDescription = "Offline", tint = Color(0xFFF57F17), modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Đang Offline. Dữ liệu sẽ tự đồng bộ khi có mạng.", fontSize = 12.sp, color = Color(0xFFF57F17), fontWeight = FontWeight.Bold)
                 }
             }
 
-            // 3. TỔNG QUAN THÁNG
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(modifier = Modifier.padding(20.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Số dư tháng này", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
-                    Text(formatter.format(balance), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(horizontalAlignment = Alignment.Start) {
-                            Text("Thu nhập", style = MaterialTheme.typography.labelMedium)
-                            Text(formatter.format(totalIncome), fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("Chi tiêu", style = MaterialTheme.typography.labelMedium)
-                            Text(formatter.format(totalExpense), fontWeight = FontWeight.Bold, color = Color(0xFFF44336))
+            Column(modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize()) {
+                MonthNavigation(viewModel)
+
+                Text("Số dư các ví", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(viewModel.wallets) { wallet ->
+                        val walletBalance = viewModel.getWalletBalance(wallet.id)
+                        Card(colors = CardDefaults.cardColors(containerColor = try { Color(android.graphics.Color.parseColor(wallet.colorHex)).copy(alpha = 0.2f) } catch(e:Exception){Color.LightGray})) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(wallet.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                // Áp dụng che tiền
+                                Text(displayMoney(walletBalance), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
+                            }
                         }
                     }
                 }
-            }
 
-            // 4. LỊCH SỬ GIAO DỊCH
-            Text("Lịch sử giao dịch", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            OutlinedTextField(
-                value = viewModel.searchQuery, onValueChange = { viewModel.searchQuery = it },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(50.dp),
-                placeholder = { Text("Tìm kiếm ghi chú...") }, leadingIcon = { Icon(Icons.Default.Search, null) },
-                shape = RoundedCornerShape(12.dp), singleLine = true
-            )
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Số dư tháng này", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                        // Áp dụng che tiền
+                        Text(displayMoney(balance), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column(horizontalAlignment = Alignment.Start) {
+                                Text("Thu nhập", style = MaterialTheme.typography.labelMedium)
+                                Text(displayMoney(totalIncome), fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Chi tiêu", style = MaterialTheme.typography.labelMedium)
+                                Text(displayMoney(totalExpense), fontWeight = FontWeight.Bold, color = Color(0xFFF44336))
+                            }
+                        }
+                    }
+                }
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(transactions) { transaction ->
-                    TransactionItem(transaction, viewModel, formatter) {
-                        editingTransaction = transaction
-                        showBottomSheet = true
+                Text("Lịch sử giao dịch", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = viewModel.searchQuery, onValueChange = { viewModel.searchQuery = it },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(50.dp),
+                    placeholder = { Text("Tìm kiếm ghi chú...") }, leadingIcon = { Icon(Icons.Default.Search, null) },
+                    shape = RoundedCornerShape(12.dp), singleLine = true
+                )
+
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(transactions) { transaction ->
+                        TransactionItem(transaction, viewModel, displayMoney) {
+                            editingTransaction = transaction
+                            showBottomSheet = true
+                        }
                     }
                 }
             }
         }
 
         if (showBottomSheet) {
-            ModalBottomSheet(
-                onDismissRequest = { showBottomSheet = false },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            ) {
+            ModalBottomSheet(onDismissRequest = { showBottomSheet = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
                 AddTransactionForm(viewModel, editingTransaction) { showBottomSheet = false }
             }
         }
@@ -158,15 +196,11 @@ fun ExpenseScreen(
 }
 
 @Composable
-fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, formatter: NumberFormat, onClick: () -> Unit) {
+fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, displayMoney: (Double) -> String, onClick: () -> Unit) {
     val dateString = SimpleDateFormat("dd/MM", Locale.getDefault()).format(transaction.date)
 
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-    ) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable { onClick() }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            // PHÂN BIỆT RÕ GIAO DỊCH THƯỜNG VÀ CHUYỂN TIỀN
             if (transaction.isTransfer) {
                 val fromWallet = viewModel.wallets.find { it.id == transaction.walletId }?.name ?: "?"
                 val toWallet = viewModel.wallets.find { it.id == transaction.toWalletId }?.name ?: "?"
@@ -180,7 +214,7 @@ fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, forma
                     Text(dateString, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(formatter.format(transaction.amount), color = Color(0xFF2196F3), fontWeight = FontWeight.Bold)
+                    Text(displayMoney(transaction.amount), color = Color(0xFF2196F3), fontWeight = FontWeight.Bold)
                     IconButton(onClick = { viewModel.deleteTransaction(transaction.id) }, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Delete, null, tint = Color.LightGray) }
                 }
             } else {
@@ -195,16 +229,18 @@ fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, forma
                     Text(dateString, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "${if(transaction.isIncome) "+" else "-"}${formatter.format(transaction.amount)}",
-                        color = if (transaction.isIncome) Color(0xFF4CAF50) else Color(0xFFF44336), fontWeight = FontWeight.Bold
-                    )
+                    val sign = if(transaction.isIncome) "+" else "-"
+                    val amountText = if (displayMoney(transaction.amount) == "****** ₫") "****** ₫" else "$sign${displayMoney(transaction.amount)}"
+
+                    Text(text = amountText, color = if (transaction.isIncome) Color(0xFF4CAF50) else Color(0xFFF44336), fontWeight = FontWeight.Bold)
                     IconButton(onClick = { viewModel.deleteTransaction(transaction.id) }, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Delete, null, tint = Color.LightGray) }
                 }
             }
         }
     }
 }
+
+// ... (Giữ nguyên các hàm AddTransactionForm và MonthNavigation bên dưới như file cũ của bạn nhé, không cần thay đổi gì thêm)
 
 @Composable
 fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transaction?, onSaved: () -> Unit) {

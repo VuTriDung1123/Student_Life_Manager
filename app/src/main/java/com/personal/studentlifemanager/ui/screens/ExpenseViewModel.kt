@@ -23,10 +23,13 @@ class ExpenseViewModel : ViewModel() {
         private set
     var recurringExpenses by mutableStateOf<List<RecurringExpense>>(emptyList())
         private set
+    var isBalanceHidden by mutableStateOf(false)
+        private set
 
     var selectedMonth by mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH))
     var selectedYear by mutableIntStateOf(Calendar.getInstance().get(Calendar.YEAR))
     var searchQuery by mutableStateOf("")
+
 
     // Lọc giao dịch không phải chuyển tiền để tính Thống kê Thu/Chi chuẩn xác
     val filteredTransactions: List<Transaction>
@@ -156,5 +159,9 @@ class ExpenseViewModel : ViewModel() {
     fun toggleRecurringState(recurring: RecurringExpense) {
         recurring.isActive = !recurring.isActive
         repository.saveRecurring(recurring, {})
+    }
+
+    fun toggleBalanceVisibility() {
+        isBalanceHidden = !isBalanceHidden
     }
 }
