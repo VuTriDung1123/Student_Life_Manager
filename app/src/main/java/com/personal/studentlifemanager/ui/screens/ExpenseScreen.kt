@@ -180,10 +180,41 @@ fun ExpenseScreen(
                         Icon(Icons.Default.NotificationsActive, "Hẹn giờ", tint = MaterialTheme.colorScheme.primary)
                     }
 
-                    // 🔥 2. NÚT BẢO MẬT CON MẮT (Cũ)
+                    // 🔥 2. NÚT BẢO MẬT CON MẮT 
                     IconButton(onClick = {
-                        // Logic gọi vân tay của bạn giữ nguyên ở đây nhé
-                        viewModel.toggleBalanceVisibility()
+                        if (viewModel.isBalanceHidden) {
+                            // Đang ẩn -> Muốn HIỆN thì phải quét vân tay
+                            val fragmentActivity = context as? androidx.fragment.app.FragmentActivity
+                            if (fragmentActivity != null) {
+                                val executor = androidx.core.content.ContextCompat.getMainExecutor(context)
+                                val biometricPrompt = androidx.biometric.BiometricPrompt(fragmentActivity, executor,
+                                    object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                                        override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                                            super.onAuthenticationSucceeded(result)
+                                            // 🟢 Quét đúng -> Cho hiện số tiền
+                                            viewModel.toggleBalanceVisibility()
+                                        }
+
+                                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                                            super.onAuthenticationError(errorCode, errString)
+                                            android.widget.Toast.makeText(context, "Lỗi xác thực: $errString", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    })
+
+                                val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                                    .setTitle("Bảo mật ứng dụng")
+                                    .setSubtitle("Quét vân tay / khuôn mặt để xem số dư")
+                                    .setNegativeButtonText("Hủy")
+                                    .build()
+
+                                biometricPrompt.authenticate(promptInfo)
+                            } else {
+                                android.widget.Toast.makeText(context, "Thiết bị không hỗ trợ", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            // Đang hiện -> Muốn ẨN thì cho ẩn luôn, không cần hỏi
+                            viewModel.toggleBalanceVisibility()
+                        }
                     }) {
                         Icon(
                             imageVector = if (viewModel.isBalanceHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
@@ -300,11 +331,27 @@ fun ExpenseScreen(
                 Text("Số dư các ví", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(viewModel.wallets) { wallet ->
-                        val walletBalance = viewModel.getWalletBalance(wallet.id)
+                        // Lấy danh sách số dư theo loại tiền
+                        val balances = viewModel.getWalletBalancesMulti(wallet.id)
+
                         Card(colors = CardDefaults.cardColors(containerColor = try { Color(android.graphics.Color.parseColor(wallet.colorHex)).copy(alpha = 0.2f) } catch(e:Exception){Color.LightGray})) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(wallet.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text(displayMoney(walletBalance), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
+
+                                if (balances.isEmpty()) {
+                                    Text(displayMoney(0.0), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
+                                } else {
+                                    balances.forEach { (curr, amt) ->
+                                        val amtStr = if (curr == "VND") displayMoney(amt) else if (viewModel.isBalanceHidden) "******" else "${String.format("%.2f", amt)} $curr"
+                                        Text(amtStr, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
+                                    }
+
+                                    // 🔥 TÍNH TỔNG QUY ĐỔI VNĐ ĐỂ THAM KHẢO NẾU CÓ NGOẠI TỆ
+                                    if (balances.keys.any { it != "VND" } && viewModel.exchangeRates.isNotEmpty()) {
+                                        val refVndTotal = balances.entries.sumOf { viewModel.convertToVND(it.value, it.key) }
+                                        Text("≈ ${displayMoney(refVndTotal)}", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                    }
+                                }
                             }
                         }
                     }
@@ -418,7 +465,7 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
     var txType by remember { mutableIntStateOf(if (editingTransaction?.isTransfer == true) 2 else if (editingTransaction?.isIncome == true) 1 else if (editingTransaction != null) 0 else initialTxType) }
     var amount by remember { mutableStateOf(if (editingTransaction != null) String.format(Locale.US, "%.0f", editingTransaction.amount) else "") }
     var note by remember { mutableStateOf(editingTransaction?.note ?: "") }
-
+    var selectedCurrency by remember { mutableStateOf(editingTransaction?.currency ?: "VND") }
     val availableCategories = viewModel.categories.filter { it.isIncome == (txType == 1) }
     var selectedCategory by remember(txType) { mutableStateOf(availableCategories.find { it.id == editingTransaction?.categoryId } ?: availableCategories.firstOrNull()) }
 
@@ -480,8 +527,32 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
         OutlinedButton(onClick = { datePickerDialog.show() }, modifier = Modifier.fillMaxWidth()) { Text("Ngày: $dateString", color = MaterialTheme.colorScheme.onSurface) }
         Spacer(modifier = Modifier.height(8.dp))
 
+        // 🔥 ĐÃ SỬA LẠI ROW CHỨA Ô NHẬP TIỀN ĐỂ KHÔNG RỚT DÒNG
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+
+            var expandedCurrency by remember { mutableStateOf(false) }
+
+            // Xóa weight, để Box tự co giãn theo chữ, éo padding nhỏ lại
+            Box(modifier = Modifier.padding(end = 8.dp)) {
+                OutlinedButton(
+                    onClick = { expandedCurrency = true },
+                    contentPadding = PaddingValues(horizontal = 12.dp) // Ép lề nhỏ lại
+                ) {
+                    Text(selectedCurrency, maxLines = 1, softWrap = false) // Cấm rớt dòng
+                }
+                DropdownMenu(expanded = expandedCurrency, onDismissRequest = { expandedCurrency = false }) {
+                    viewModel.supportedCurrencies.forEach { curr ->
+                        DropdownMenuItem(
+                            text = { Text(curr) },
+                            onClick = { selectedCurrency = curr; expandedCurrency = false }
+                        )
+                    }
+                }
+            }
+
+            // Ô nhập tiền đổi thành weight(1f) để chiếm hết phần dư còn lại
             OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Số tiền") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
+
             Spacer(modifier = Modifier.width(8.dp))
             Button(
                 onClick = { galleryLauncher.launch("image/*") },
@@ -497,13 +568,16 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
             onClick = {
                 val parsedAmount = amount.toDoubleOrNull() ?: 0.0
                 if (parsedAmount > 0) {
+                    // 🔥 CẬP NHẬT TRUYỀN selectedCurrency VÀO OBJECT VÀ HÀM
                     val saveAction = {
                         if (txType == 2 && selectedWallet != null && selectedToWallet != null && selectedWallet != selectedToWallet) {
-                            val transaction = Transaction(editingTransaction?.id ?: "", parsedAmount, note, selectedDateMillis, "", false, selectedWallet!!.id, true, selectedToWallet!!.id)
-                            if (editingTransaction == null) viewModel.addTransfer(parsedAmount, note, selectedWallet!!.id, selectedToWallet!!.id, selectedDateMillis, onSaved) else viewModel.updateTransaction(transaction, onSaved)
+                            val transaction = Transaction(editingTransaction?.id ?: "", parsedAmount, note, selectedDateMillis, "", false, selectedWallet!!.id, true, selectedToWallet!!.id, selectedCurrency)
+                            if (editingTransaction == null) viewModel.addTransfer(parsedAmount, note, selectedWallet!!.id, selectedToWallet!!.id, selectedDateMillis, selectedCurrency, onSaved)
+                            else viewModel.updateTransaction(transaction, onSaved)
                         } else if (txType != 2 && selectedCategory != null && selectedWallet != null) {
-                            val transaction = Transaction(editingTransaction?.id ?: "", parsedAmount, note, selectedDateMillis, selectedCategory!!.id, txType == 1, selectedWallet!!.id, false, "")
-                            if (editingTransaction == null) viewModel.addTransaction(parsedAmount, note, selectedCategory!!.id, selectedWallet!!.id, txType == 1, onSaved) else viewModel.updateTransaction(transaction, onSaved)
+                            val transaction = Transaction(editingTransaction?.id ?: "", parsedAmount, note, selectedDateMillis, selectedCategory!!.id, txType == 1, selectedWallet!!.id, false, "", selectedCurrency)
+                            if (editingTransaction == null) viewModel.addTransaction(parsedAmount, note, selectedCategory!!.id, selectedWallet!!.id, txType == 1, selectedCurrency, onSaved)
+                            else viewModel.updateTransaction(transaction, onSaved)
                         }
                     }
 

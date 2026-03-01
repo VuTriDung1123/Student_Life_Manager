@@ -14,6 +14,13 @@ import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import androidx.lifecycle.viewModelScope
 
 class ExpenseViewModel : ViewModel() {
     private val repository = ExpenseRepository()
@@ -34,6 +41,9 @@ class ExpenseViewModel : ViewModel() {
     var selectedMonth by mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH))
     var selectedYear by mutableIntStateOf(Calendar.getInstance().get(Calendar.YEAR))
     var searchQuery by mutableStateOf("")
+    val supportedCurrencies = listOf("VND", "USD", "EUR", "JPY", "KRW")
+    var exchangeRates by mutableStateOf<Map<String, Double>>(emptyMap())
+        private set
 
 
     // Lọc giao dịch không phải chuyển tiền để tính Thống kê Thu/Chi chuẩn xác
@@ -57,6 +67,7 @@ class ExpenseViewModel : ViewModel() {
             recurringExpenses = list
             checkAndExecuteRecurring(list) // Gọi thuật toán mỗi khi có data
         }
+        fetchExchangeRates()
     }
 
     // 🔥 HÀM TÍNH SỐ DƯ TỪNG VÍ (Tuyệt chiêu xử lý dòng tiền)
@@ -83,14 +94,14 @@ class ExpenseViewModel : ViewModel() {
         defaults.forEach { repository.addWallet(it) {} }
     }
 
-    fun addTransaction(amount: Double, note: String, categoryId: String, walletId: String, isIncome: Boolean, onSuccess: () -> Unit) {
-        val transaction = Transaction("", amount, note, System.currentTimeMillis(), categoryId, isIncome, walletId)
+    // 🔥 CẬP NHẬT 2 HÀM NÀY ĐỂ NHẬN LOẠI TIỀN (CURRENCY)
+    fun addTransaction(amount: Double, note: String, categoryId: String, walletId: String, isIncome: Boolean, currency: String = "VND", onSuccess: () -> Unit) {
+        val transaction = Transaction("", amount, note, System.currentTimeMillis(), categoryId, isIncome, walletId, false, "", currency)
         repository.addTransaction(transaction, onSuccess, {})
     }
 
-    // 🔥 HÀM THÊM LỆNH CHUYỂN TIỀN
-    fun addTransfer(amount: Double, note: String, fromWalletId: String, toWalletId: String, dateMillis: Long, onSuccess: () -> Unit) {
-        val transaction = Transaction("", amount, note, dateMillis, "", false, fromWalletId, true, toWalletId)
+    fun addTransfer(amount: Double, note: String, fromWalletId: String, toWalletId: String, dateMillis: Long, currency: String = "VND", onSuccess: () -> Unit) {
+        val transaction = Transaction("", amount, note, dateMillis, "", false, fromWalletId, true, toWalletId, currency)
         repository.addTransaction(transaction, onSuccess, {})
     }
 
@@ -258,5 +269,54 @@ class ExpenseViewModel : ViewModel() {
             return dailyBurnRate * maxDays
         }
         return currentMonthExpenses // Nếu xem tháng cũ thì trả về số thực tế
+    }
+
+    // ==========================================
+    // --- KHU VỰC 8: XỬ LÝ ĐA TIỀN TỆ (MULTI-CURRENCY) ---
+    // ==========================================
+
+    // 1. Gọi API Lấy tỷ giá Real-time (Lấy VND làm gốc)
+    private fun fetchExchangeRates() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL("https://open.er-api.com/v6/latest/VND")
+                val connection = url.openConnection() as HttpURLConnection
+                connection.connect()
+                val response = connection.inputStream.bufferedReader().readText()
+                val json = JSONObject(response)
+                val rates = json.getJSONObject("rates")
+
+                val map = mutableMapOf<String, Double>()
+                supportedCurrencies.forEach { curr ->
+                    if (rates.has(curr)) map[curr] = rates.getDouble(curr)
+                }
+                withContext(Dispatchers.Main) { exchangeRates = map }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    // 2. Tính tiền gom theo từng loại trong 1 ví (Map<Tiền, Số dư>)
+    fun getWalletBalancesMulti(walletId: String): Map<String, Double> {
+        val balances = mutableMapOf<String, Double>()
+        allTransactions.filter { it.walletId == walletId }.forEach { t ->
+            val current = balances[t.currency] ?: 0.0
+            if (t.isTransfer) {
+                if (t.walletId == walletId) balances[t.currency] = current - t.amount
+            } else {
+                balances[t.currency] = if (t.isIncome) current + t.amount else current - t.amount
+            }
+        }
+        allTransactions.filter { it.toWalletId == walletId && it.isTransfer }.forEach { t ->
+            balances[t.currency] = (balances[t.currency] ?: 0.0) + t.amount
+        }
+        // Xóa các loại tiền đang có số dư = 0 cho đỡ rác
+        return balances.filterValues { it != 0.0 }
+    }
+
+    // 3. Hàm quy đổi mọi thứ ra VND để tham khảo
+    fun convertToVND(amount: Double, currency: String): Double {
+        if (currency == "VND") return amount
+        val rate = exchangeRates[currency] ?: return 0.0
+        return amount / rate // Ví dụ: USD = 0.00004 -> 100 USD / 0.00004 = 2.500.000 VND
     }
 }
