@@ -3,6 +3,7 @@ package com.personal.studentlifemanager.ui.screens
 import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -10,6 +11,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,7 +35,7 @@ import java.util.Locale
 @Composable
 fun PomodoroScreen(
     onBack: () -> Unit,
-    onNavigateToTimer: (PomodoroConfig, String) -> Unit, // Đã thêm tham số String cho Task
+    onNavigateToTimer: (PomodoroConfig, String) -> Unit,
     pomodoroViewModel: PomodoroViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val context = LocalContext.current
@@ -53,14 +56,14 @@ fun PomodoroScreen(
     var taskNameInput by remember { mutableStateOf("") }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    val todayRecords = pomodoroViewModel.todayRecords
+    val currentDateRecords = pomodoroViewModel.currentDateRecords
 
     // Bắt buộc tải lại dữ liệu khi quay lại màn hình
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                pomodoroViewModel.fetchTodayRecords()
+                pomodoroViewModel.fetchRecordsForSelectedDate()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -85,6 +88,49 @@ fun PomodoroScreen(
         ) {
             Spacer(modifier = Modifier.height(8.dp))
 
+            // 🔥 1. CHUYỂN NGÀY VÀ TỔNG KẾT TUẦN
+            val dateStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(pomodoroViewModel.selectedDate.time)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Tuần này: ${pomodoroViewModel.weeklyTotalMinutes} phút", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { pomodoroViewModel.changeDate(-1) }) { Icon(Icons.Default.ChevronLeft, "Hôm trước") }
+                    Text(dateStr, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    IconButton(onClick = { pomodoroViewModel.changeDate(1) }) { Icon(Icons.Default.ChevronRight, "Hôm sau") }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 🔥 2. ĐẾM SỐ POMODORO CHO MỖI TASK (THỐNG KÊ TASK)
+            val completedRecords = currentDateRecords.filter { it.isCompleted }
+            if (completedRecords.isNotEmpty()) {
+                Text("Tiến độ theo Task", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val taskStats = completedRecords.groupBy { if (it.taskName.isBlank()) "Tự do" else it.taskName }
+
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(taskStats.entries.toList()) { entry ->
+                        val taskName = entry.key
+                        val pomodoroCount = entry.value.size
+                        val totalMinutes = entry.value.sumOf { it.actualFocusMinutes }
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(taskName, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                Text("$pomodoroCount phiên • $totalMinutes phút", fontSize = 12.sp, color = Color.DarkGray)
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // 🔥 3. CARD CÀI ĐẶT & BẮT ĐẦU
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -99,7 +145,6 @@ fun PomodoroScreen(
                     Text("${config.focusTime} / ${config.shortBreak} / ${config.sessionsCount} / ${config.longBreak}", fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // 🔥 Ô NHẬP TÊN CÔNG VIỆC
                     OutlinedTextField(
                         value = taskNameInput,
                         onValueChange = { taskNameInput = it },
@@ -121,7 +166,7 @@ fun PomodoroScreen(
                         }
 
                         Button(
-                            onClick = { onNavigateToTimer(config, taskNameInput) }, // Truyền cả Cấu hình và Tên Task
+                            onClick = { onNavigateToTimer(config, taskNameInput) },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.height(50.dp).width(120.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57C00))
@@ -133,21 +178,16 @@ fun PomodoroScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-            Text("Nhật ký hôm nay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            // 🔥 HIỂN THỊ THỐNG KÊ CƠ BẢN
-            val totalCompleted = todayRecords.count { it.isCompleted }
-            val totalMinutes = todayRecords.filter { it.isCompleted }.sumOf { it.actualFocusMinutes }
-            Text(
-                text = "Đã hoàn thành: $totalCompleted phiên • Tổng thời gian: $totalMinutes phút",
-                fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium
-            )
+
+            // 🔥 4. DANH SÁCH LỊCH SỬ CHI TIẾT
+            Text("Lịch sử phiên", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
 
             LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (todayRecords.isEmpty()) {
-                    item { Text("Chưa có phiên tập trung nào hôm nay. Hãy bắt đầu ngay!", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(top = 16.dp)) }
+                if (currentDateRecords.isEmpty()) {
+                    item { Text("Chưa có phiên tập trung nào trong ngày này.", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(top = 16.dp)) }
                 } else {
-                    items(todayRecords) { record -> RecordItem(record) }
+                    items(currentDateRecords) { record -> RecordItem(record, pomodoroViewModel) }
                 }
             }
         }
@@ -182,7 +222,7 @@ fun PomodoroSettingsDialog(
     var shortBreak by remember { mutableStateOf(currentConfig.shortBreak.toString()) }
     var sessionsCount by remember { mutableStateOf(currentConfig.sessionsCount.toString()) }
     var longBreak by remember { mutableStateOf(currentConfig.longBreak.toString()) }
-    var autoStart by remember { mutableStateOf(currentConfig.autoStart) } // Thêm state này
+    var autoStart by remember { mutableStateOf(currentConfig.autoStart) }
 
     val presets = listOf(PomodoroConfig(25, 5, 4, 15), PomodoroConfig(30, 5, 4, 15), PomodoroConfig(45, 10, 4, 20))
 
@@ -205,7 +245,6 @@ fun PomodoroSettingsDialog(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // 🔥 CÔNG TẮC BẬT TẮT AUTO-START
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Tự động bắt đầu chuyển phiên", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Switch(checked = autoStart, onCheckedChange = { autoStart = it })
@@ -234,7 +273,6 @@ fun PomodoroSettingsDialog(
     }
 }
 
-// Thay đổi tham số hàm RecordItem để nhận lệnh Xóa
 @Composable
 fun RecordItem(record: PomodoroRecord, pomodoroViewModel: PomodoroViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
     val calendar = Calendar.getInstance().apply { timeInMillis = record.startTime }
@@ -257,7 +295,6 @@ fun RecordItem(record: PomodoroRecord, pomodoroViewModel: PomodoroViewModel = an
                 }
             }
 
-            // 🔥 NÚT XÓA BÊN PHẢI
             var showDeleteConfirm by remember { mutableStateOf(false) }
             IconButton(onClick = { showDeleteConfirm = true }) {
                 Icon(Icons.Default.Cancel, contentDescription = "Xóa", tint = Color.LightGray)
