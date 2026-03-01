@@ -90,4 +90,11 @@ class ExpenseRepository {
     fun deleteCategory(categoryId: String) {
         categoryRef.document(categoryId).delete()
     }
+
+    // 🔄 Hàm Cập nhật (Sửa) giao dịch
+    fun updateTransaction(transaction: Transaction, onSuccess: () -> Unit) {
+        // Dùng đúng ID của nó để ghi đè dữ liệu mới lên
+        transactionRef.document(transaction.id).set(transaction)
+            .addOnSuccessListener { onSuccess() }
+    }
 }

@@ -25,51 +25,110 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun CategoryScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = viewModel()) {
     var showAddDialog by remember { mutableStateOf(false) }
-    val categories = viewModel.categories
+
+    // 0: Chi tiêu, 1: Thu nhập
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+
+    // Tự động lọc danh sách theo Tab đang chọn
+    val displayCategories = viewModel.categories.filter { it.isIncome == (selectedTabIndex == 1) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Quản lý danh mục", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Quay lại") }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }, containerColor = MaterialTheme.colorScheme.primary) {
-                Icon(Icons.Default.Add, "Thêm danh mục", tint = Color.White)
+            FloatingActionButton(
+                onClick = { showAddDialog = true },
+                containerColor = MaterialTheme.colorScheme.primary
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Thêm danh mục", tint = Color.White)
             }
         }
     ) { padding ->
-        LazyColumn(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
-            items(categories) { cat ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier.size(40.dp).background(Color(android.graphics.Color.parseColor(cat.colorHex)), CircleShape),
-                            contentAlignment = Alignment.Center
+        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+
+            // --- THANH TAB THU / CHI ---
+            TabRow(selectedTabIndex = selectedTabIndex) {
+                Tab(
+                    selected = selectedTabIndex == 0,
+                    onClick = { selectedTabIndex = 0 },
+                    text = { Text("Chi tiêu", fontWeight = if (selectedTabIndex == 0) FontWeight.Bold else FontWeight.Normal) }
+                )
+                Tab(
+                    selected = selectedTabIndex == 1,
+                    onClick = { selectedTabIndex = 1 },
+                    text = { Text("Thu nhập", fontWeight = if (selectedTabIndex == 1) FontWeight.Bold else FontWeight.Normal) }
+                )
+            }
+
+            // --- DANH SÁCH DANH MỤC ---
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (displayCategories.isEmpty()) {
+                    item {
+                        Text(
+                            text = "Chưa có danh mục nào. Hãy tạo mới nhé!",
+                            color = Color.Gray,
+                            modifier = Modifier.padding(top = 16.dp)
+                        )
+                    }
+                } else {
+                    items(displayCategories) { cat ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text(cat.name.take(1), fontWeight = FontWeight.Bold, color = Color.DarkGray)
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(cat.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text(if (cat.isIncome) "Thu nhập" else "Chi tiêu", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                        }
-                        IconButton(onClick = { viewModel.deleteCategory(cat.id) }) {
-                            Icon(Icons.Default.Delete, "Xóa", tint = Color.Red.copy(alpha = 0.6f))
+                            Row(
+                                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Vòng tròn màu sắc
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(
+                                            try { Color(android.graphics.Color.parseColor(cat.colorHex)) } catch(e: Exception) { Color.LightGray },
+                                            CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(cat.name.take(1).uppercase(), fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                                }
+
+                                Spacer(modifier = Modifier.width(16.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(cat.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                    Text(
+                                        text = if (cat.isIncome) "Dùng cho Thu nhập" else "Dùng cho Chi tiêu",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.Gray
+                                    )
+                                }
+
+                                // Nút xóa danh mục
+                                IconButton(onClick = { viewModel.deleteCategory(cat.id) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Xóa", tint = Color.Red.copy(alpha = 0.6f))
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
+        // --- DIALOG THÊM DANH MỤC ---
         if (showAddDialog) {
             AddCategoryDialog(
+                initialIsIncome = (selectedTabIndex == 1), // Tự động chọn đúng loại Tab đang xem
                 onDismiss = { showAddDialog = false },
                 onSave = { name, colorHex, isIncome ->
                     viewModel.addCategory(name, colorHex, isIncome) { showAddDialog = false }
@@ -80,11 +139,20 @@ fun CategoryScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = viewModel()
 }
 
 @Composable
-fun AddCategoryDialog(onDismiss: () -> Unit, onSave: (String, String, Boolean) -> Unit) {
+fun AddCategoryDialog(
+    initialIsIncome: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String, String, Boolean) -> Unit
+) {
     var name by remember { mutableStateOf("") }
-    var isIncome by remember { mutableStateOf(false) }
-    // Bảng màu Pastel ngọt ngào (Sakura pink, Mint, Lavender...)
-    val colorPalette = listOf("#FFB6C1", "#ADD8E6", "#98FB98", "#FFD700", "#DDA0DD", "#FFA07A", "#20B2AA", "#87CEFA")
+    var isIncome by remember { mutableStateOf(initialIsIncome) }
+
+    // Bảng màu Pastel chuẩn phong cách ứng dụng
+    val colorPalette = listOf(
+        "#FFB6C1", "#ADD8E6", "#98FB98", "#FFD700",
+        "#DDA0DD", "#FFA07A", "#20B2AA", "#87CEFA",
+        "#FFC0CB", "#E6E6FA", "#F0E68C", "#B0E0E6"
+    )
     var selectedColor by remember { mutableStateOf(colorPalette[0]) }
 
     AlertDialog(
@@ -93,25 +161,46 @@ fun AddCategoryDialog(onDismiss: () -> Unit, onSave: (String, String, Boolean) -
         text = {
             Column {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    FilterChip(selected = !isIncome, onClick = { isIncome = false }, label = { Text("Chi tiêu") })
+                    FilterChip(
+                        selected = !isIncome,
+                        onClick = { isIncome = false },
+                        label = { Text("Chi tiêu") },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFFFCDD2))
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
-                    FilterChip(selected = isIncome, onClick = { isIncome = true }, label = { Text("Thu nhập") })
+                    FilterChip(
+                        selected = isIncome,
+                        onClick = { isIncome = true },
+                        label = { Text("Thu nhập") },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFC8E6C9))
+                    )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Tên danh mục") }, singleLine = true)
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Tên danh mục (vd: Mua sắm, Lương...)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("Chọn màu sắc:", style = MaterialTheme.typography.labelMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                // Vẽ lưới màu
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    colorPalette.take(4).forEach { hex ->
-                        ColorBox(hex, selectedColor == hex) { selectedColor = hex }
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    colorPalette.drop(4).forEach { hex ->
-                        ColorBox(hex, selectedColor == hex) { selectedColor = hex }
+                Text("Chọn màu sắc đại diện:", style = MaterialTheme.typography.labelMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Vẽ lưới màu 4 cột x 3 hàng
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (row in 0..2) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            for (col in 0..3) {
+                                val index = row * 4 + col
+                                if (index < colorPalette.size) {
+                                    val hex = colorPalette[index]
+                                    ColorBox(hex, selectedColor == hex) { selectedColor = hex }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -127,15 +216,16 @@ fun AddCategoryDialog(onDismiss: () -> Unit, onSave: (String, String, Boolean) -
 
 @Composable
 fun ColorBox(hex: String, isSelected: Boolean, onClick: () -> Unit) {
+    val color = try { Color(android.graphics.Color.parseColor(hex)) } catch (e: Exception) { Color.LightGray }
     Box(
         modifier = Modifier
-            .size(36.dp)
-            .background(Color(android.graphics.Color.parseColor(hex)), CircleShape)
+            .size(42.dp)
+            .background(color, CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         if (isSelected) {
-            Box(modifier = Modifier.size(16.dp).background(Color.White, CircleShape))
+            Box(modifier = Modifier.size(18.dp).background(Color.White, CircleShape))
         }
     }
 }
