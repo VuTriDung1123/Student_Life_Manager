@@ -42,6 +42,9 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
 
 // --- HÀM LẮNG NGHE MẠNG OFFLINE/ONLINE ---
 @Composable
@@ -282,7 +285,6 @@ fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, displ
 
 @Composable
 fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transaction?, onSaved: () -> Unit) {
-    // txType: 0=Chi, 1=Thu, 2=Chuyển tiền
     var txType by remember { mutableIntStateOf(if (editingTransaction?.isTransfer == true) 2 else if (editingTransaction?.isIncome == true) 1 else 0) }
     var amount by remember { mutableStateOf(if (editingTransaction != null) String.format(Locale.US, "%.0f", editingTransaction.amount) else "") }
     var note by remember { mutableStateOf(editingTransaction?.note ?: "") }
@@ -300,6 +302,27 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
 
     val datePickerDialog = DatePickerDialog(context, { _, y, m, d -> val cal = Calendar.getInstance(); cal.set(y,m,d); selectedDateMillis = cal.timeInMillis }, Calendar.getInstance().get(Calendar.YEAR), Calendar.getInstance().get(Calendar.MONTH), Calendar.getInstance().get(Calendar.DAY_OF_MONTH))
 
+    // 🔥 LOGIC AI: BỘ CHỌN ẢNH VÀ TRẠNG THÁI LOADING
+    var isProcessingAI by remember { mutableStateOf(false) }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let {
+            isProcessingAI = true
+            viewModel.processReceiptImage(
+                context = context,
+                uri = it,
+                onResult = { extractedAmount ->
+                    amount = extractedAmount // Điền luôn số tiền vào UI
+                    Toast.makeText(context, "Đã quét thành công số tiền: $extractedAmount", Toast.LENGTH_SHORT).show()
+                    isProcessingAI = false
+                },
+                onError = {
+                    Toast.makeText(context, "Không nhận diện được số tiền trên hóa đơn!", Toast.LENGTH_SHORT).show()
+                    isProcessingAI = false
+                }
+            )
+        }
+    }
+
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(if (editingTransaction == null) "Giao dịch mới" else "Sửa giao dịch", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
@@ -309,29 +332,48 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
             FilterChip(selected = txType == 2, onClick = { txType = 2 }, label = { Text("Chuyển ví") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFBBDEFB)))
         }
 
+        // ... [Phần chọn Ví và Danh mục giữ nguyên như cũ, mình viết gọn lại xíu]
         if (txType == 2) {
             Text("Từ ví:", style = MaterialTheme.typography.labelMedium, modifier = Modifier.align(Alignment.Start))
-            LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(wallets) { w -> FilterChip(selected = selectedWallet?.id == w.id, onClick = { selectedWallet = w }, label = { Text(w.name) }) }
-            }
+            LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(wallets) { w -> FilterChip(selected = selectedWallet?.id == w.id, onClick = { selectedWallet = w }, label = { Text(w.name) }) } }
             Text("Đến ví:", style = MaterialTheme.typography.labelMedium, modifier = Modifier.align(Alignment.Start))
-            LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(wallets) { w -> FilterChip(selected = selectedToWallet?.id == w.id, onClick = { selectedToWallet = w }, label = { Text(w.name) }) }
-            }
+            LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(wallets) { w -> FilterChip(selected = selectedToWallet?.id == w.id, onClick = { selectedToWallet = w }, label = { Text(w.name) }) } }
         } else {
             Text("Nguồn tiền (Ví):", style = MaterialTheme.typography.labelMedium, modifier = Modifier.align(Alignment.Start))
-            LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(wallets) { w -> FilterChip(selected = selectedWallet?.id == w.id, onClick = { selectedWallet = w }, label = { Text(w.name) }) }
-            }
+            LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(wallets) { w -> FilterChip(selected = selectedWallet?.id == w.id, onClick = { selectedWallet = w }, label = { Text(w.name) }) } }
             Text("Danh mục:", style = MaterialTheme.typography.labelMedium, modifier = Modifier.align(Alignment.Start))
-            LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(availableCategories) { cat -> FilterChip(selected = selectedCategory?.id == cat.id, onClick = { selectedCategory = cat }, label = { Text(cat.name) }) }
-            }
+            LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(availableCategories) { cat -> FilterChip(selected = selectedCategory?.id == cat.id, onClick = { selectedCategory = cat }, label = { Text(cat.name) }) } }
         }
 
         OutlinedButton(onClick = { datePickerDialog.show() }, modifier = Modifier.fillMaxWidth()) { Text("Ngày: $dateString", color = MaterialTheme.colorScheme.onSurface) }
         Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Số tiền") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+
+        // 🔥 GIAO DIỆN QUÉT HÓA ĐƠN
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { amount = it },
+                label = { Text("Số tiền") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Nút Kích hoạt AI
+            Button(
+                onClick = { galleryLauncher.launch("image/*") }, // Mở thư viện ảnh
+                modifier = Modifier.height(56.dp).padding(top = 8.dp),
+                shape = RoundedCornerShape(8.dp),
+                enabled = !isProcessingAI
+            ) {
+                if (isProcessingAI) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                } else {
+                    Icon(Icons.Default.DocumentScanner, contentDescription = "Quét Bill")
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text(if (txType == 2) "Lý do chuyển" else "Ghi chú") }, modifier = Modifier.fillMaxWidth())
         Spacer(modifier = Modifier.height(24.dp))
