@@ -84,6 +84,8 @@ fun ExpenseScreen(
     // 🔥 1. SNACKBAR STATE (CHO TÍNH NĂNG UNDO)
     val snackbarHostState = remember { SnackbarHostState() }
 
+    var selectedWalletForDetails by remember { mutableStateOf<com.personal.studentlifemanager.data.model.Wallet?>(null) }
+
 
     val transactions = viewModel.filteredTransactions
     val formatter = NumberFormat.getCurrencyInstance(Locale("vi", "VN"))
@@ -180,7 +182,7 @@ fun ExpenseScreen(
                         Icon(Icons.Default.NotificationsActive, "Hẹn giờ", tint = MaterialTheme.colorScheme.primary)
                     }
 
-                    // 🔥 2. NÚT BẢO MẬT CON MẮT 
+                    // 🔥 2. NÚT BẢO MẬT CON MẮT
                     IconButton(onClick = {
                         if (viewModel.isBalanceHidden) {
                             // Đang ẩn -> Muốn HIỆN thì phải quét vân tay
@@ -331,26 +333,21 @@ fun ExpenseScreen(
                 Text("Số dư các ví", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(viewModel.wallets) { wallet ->
-                        // Lấy danh sách số dư theo loại tiền
                         val balances = viewModel.getWalletBalancesMulti(wallet.id)
+                        // Tính tổng tất cả tài sản trong ví quy ra VNĐ
+                        val totalVndEquivalent = balances.entries.sumOf { viewModel.convertToVND(it.value, it.key) }
 
-                        Card(colors = CardDefaults.cardColors(containerColor = try { Color(android.graphics.Color.parseColor(wallet.colorHex)).copy(alpha = 0.2f) } catch(e:Exception){Color.LightGray})) {
+                        Card(
+                            modifier = Modifier.clickable { selectedWalletForDetails = wallet }, // 🔥 BẤM VÀO ĐỂ MỞ CHI TIẾT
+                            colors = CardDefaults.cardColors(containerColor = try { Color(android.graphics.Color.parseColor(wallet.colorHex)).copy(alpha = 0.2f) } catch(e:Exception){Color.LightGray})
+                        ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(wallet.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                // Chỉ hiện 1 dòng Tổng tài sản quy đổi VNĐ cho gọn
+                                Text(displayMoney(totalVndEquivalent), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
 
-                                if (balances.isEmpty()) {
-                                    Text(displayMoney(0.0), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
-                                } else {
-                                    balances.forEach { (curr, amt) ->
-                                        val amtStr = if (curr == "VND") displayMoney(amt) else if (viewModel.isBalanceHidden) "******" else "${String.format("%.2f", amt)} $curr"
-                                        Text(amtStr, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
-                                    }
-
-                                    // 🔥 TÍNH TỔNG QUY ĐỔI VNĐ ĐỂ THAM KHẢO NẾU CÓ NGOẠI TỆ
-                                    if (balances.keys.any { it != "VND" } && viewModel.exchangeRates.isNotEmpty()) {
-                                        val refVndTotal = balances.entries.sumOf { viewModel.convertToVND(it.value, it.key) }
-                                        Text("≈ ${displayMoney(refVndTotal)}", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                                    }
+                                if (balances.size > 1) {
+                                    Text("(Gồm ${balances.size} loại tiền)", fontSize = 11.sp, color = Color.Gray)
                                 }
                             }
                         }
@@ -415,6 +412,47 @@ fun ExpenseScreen(
         if (showBottomSheet) {
             ModalBottomSheet(onDismissRequest = { showBottomSheet = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
                 AddTransactionForm(viewModel, editingTransaction, initialTxType = quickAddType) { showBottomSheet = false }
+            }
+        }
+
+        // 🔥 HIỂN THỊ BẢNG CHI TIẾT ĐA TIỀN TỆ KHI BẤM VÀO VÍ
+        if (selectedWalletForDetails != null) {
+            ModalBottomSheet(onDismissRequest = { selectedWalletForDetails = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+                val wallet = selectedWalletForDetails!!
+                val balances = viewModel.getWalletBalancesMulti(wallet.id)
+                val totalVnd = balances.entries.sumOf { viewModel.convertToVND(it.value, it.key) }
+
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp)) {
+                    Text("Chi tiết: ${wallet.name}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("Tổng tài sản quy đổi: ${displayMoney(totalVnd)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    if (balances.isEmpty()) {
+                        Text("Ví rỗng", color = Color.Gray, modifier = Modifier.padding(vertical = 16.dp).align(Alignment.CenterHorizontally))
+                    } else {
+                        Text("Tài sản đang nắm giữ:", fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                        LazyColumn {
+                            items(balances.toList()) { (curr, amt) ->
+                                val vndAmt = viewModel.convertToVND(amt, curr)
+                                val formattedAmt = if (viewModel.isBalanceHidden) "******" else "${String.format(Locale.US, "%,.2f", amt)} $curr"
+
+                                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(modifier = Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                                            Text(curr, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                        }
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Text(formattedAmt, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                    }
+                                    if (curr != "VND") {
+                                        Text("≈ ${displayMoney(vndAmt)}", color = Color.Gray, fontSize = 14.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
