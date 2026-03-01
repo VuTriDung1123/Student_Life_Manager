@@ -49,6 +49,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 import android.widget.DatePicker
+import androidx.glance.appwidget.updateAll
+import kotlinx.coroutines.launch
 
 @Composable
 fun connectivityState(context: Context): State<Boolean> {
@@ -81,7 +83,7 @@ fun ExpenseScreen(
 
     // 🔥 1. SNACKBAR STATE (CHO TÍNH NĂNG UNDO)
     val snackbarHostState = remember { SnackbarHostState() }
-    val coroutineScope = rememberCoroutineScope()
+
 
     val transactions = viewModel.filteredTransactions
     val formatter = NumberFormat.getCurrencyInstance(Locale("vi", "VN"))
@@ -93,6 +95,24 @@ fun ExpenseScreen(
     val totalIncome = transactions.filter { it.isIncome && !it.isTransfer }.sumOf { it.amount }
     val totalExpense = transactions.filter { !it.isIncome && !it.isTransfer }.sumOf { it.amount }
     val balance = totalIncome - totalExpense
+
+    // 🔥 ĐOẠN MỚI THÊM: TỰ ĐỘNG BƠM DỮ LIỆU RA WIDGET
+    val coroutineScope = rememberCoroutineScope()
+    LaunchedEffect(balance, totalIncome, totalExpense) {
+        val prefs = context.getSharedPreferences("ExpenseWidgetPrefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putLong("balance", balance.toLong())
+            .putLong("income", totalIncome.toLong())
+            .putLong("expense", totalExpense.toLong())
+            .apply()
+
+        // Ép Widget cập nhật giao diện ngay lập tức
+        coroutineScope.launch {
+            try {
+                com.personal.studentlifemanager.widget.ExpenseWidget().updateAll(context)
+            } catch (e: Exception) { /* Bỏ qua nếu Widget chưa được tạo */ }
+        }
+    }
 
     // 🔥 2. XUẤT FILE CSV
     var csvContentToSave by remember { mutableStateOf("") }
