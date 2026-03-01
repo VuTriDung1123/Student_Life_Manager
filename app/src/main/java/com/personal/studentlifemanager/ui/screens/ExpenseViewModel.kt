@@ -4,6 +4,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import com.personal.studentlifemanager.data.model.Budget
 import com.personal.studentlifemanager.data.model.Category
+import com.personal.studentlifemanager.data.model.RecurringExpense
 import com.personal.studentlifemanager.data.model.Transaction
 import com.personal.studentlifemanager.data.model.Wallet
 import com.personal.studentlifemanager.data.repository.ExpenseRepository
@@ -19,6 +20,8 @@ class ExpenseViewModel : ViewModel() {
     var wallets by mutableStateOf<List<Wallet>>(emptyList())
         private set
     var budgets by mutableStateOf<List<Budget>>(emptyList())
+        private set
+    var recurringExpenses by mutableStateOf<List<RecurringExpense>>(emptyList())
         private set
 
     var selectedMonth by mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH))
@@ -41,6 +44,11 @@ class ExpenseViewModel : ViewModel() {
         repository.getCategories { list -> if (list.isEmpty()) seedDefaultCategories() else categories = list }
         repository.getWallets { list -> if (list.isEmpty()) seedDefaultWallets() else wallets = list }
         repository.getBudgets { list -> budgets = list }
+
+        repository.getRecurringExpenses { list ->
+            recurringExpenses = list
+            checkAndExecuteRecurring(list) // Gọi thuật toán mỗi khi có data
+        }
     }
 
     // 🔥 HÀM TÍNH SỐ DƯ TỪNG VÍ (Tuyệt chiêu xử lý dòng tiền)
@@ -111,5 +119,42 @@ class ExpenseViewModel : ViewModel() {
             val cal = Calendar.getInstance().apply { timeInMillis = t.date }
             cal.get(Calendar.MONTH) == month && cal.get(Calendar.YEAR) == year && !t.isIncome && !t.isTransfer
         }.sumOf { it.amount }
+    }
+    // --- THUẬT TOÁN KIỂM TRA & TỰ ĐỘNG CHẠY GIAO DỊCH ---
+    private fun checkAndExecuteRecurring(list: List<RecurringExpense>) {
+        val now = System.currentTimeMillis()
+
+        // Lọc ra các mục đang Bật (isActive) và đã đến hạn (nextExecutionTime <= now)
+        val dueItems = list.filter { it.isActive && it.nextExecutionTime <= now }
+
+        dueItems.forEach { rec ->
+            // 1. Tự động tạo một Giao dịch thật sự vào lịch sử
+            val newTransaction = Transaction(
+                id = "",
+                amount = rec.amount,
+                note = "${rec.note} (Tự động)", // Thêm chữ để user biết app tự trừ
+                date = rec.nextExecutionTime,
+                categoryId = rec.categoryId,
+                isIncome = rec.isIncome,
+                walletId = rec.walletId
+            )
+            repository.addTransaction(newTransaction, {}, {})
+
+            // 2. Tính toán ngày tháng tiếp theo (+1 tháng)
+            val cal = Calendar.getInstance().apply { timeInMillis = rec.nextExecutionTime }
+            cal.add(Calendar.MONTH, 1)
+
+            // 3. Cập nhật lại lịch lặp lại lên Firebase
+            rec.nextExecutionTime = cal.timeInMillis
+            repository.saveRecurring(rec, {})
+        }
+    }
+
+    // --- HÀM CHO UI GỌI ---
+    fun saveRecurring(recurring: RecurringExpense, onSuccess: () -> Unit) = repository.saveRecurring(recurring, onSuccess)
+    fun deleteRecurring(recurringId: String) = repository.deleteRecurring(recurringId)
+    fun toggleRecurringState(recurring: RecurringExpense) {
+        recurring.isActive = !recurring.isActive
+        repository.saveRecurring(recurring, {})
     }
 }

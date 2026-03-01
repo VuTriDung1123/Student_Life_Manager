@@ -6,6 +6,7 @@ import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.Query
 import com.personal.studentlifemanager.data.model.Budget
 import com.personal.studentlifemanager.data.model.Category
+import com.personal.studentlifemanager.data.model.RecurringExpense
 import com.personal.studentlifemanager.data.model.Transaction
 import com.personal.studentlifemanager.data.model.Wallet
 
@@ -160,5 +161,36 @@ class ExpenseRepository {
 
     fun deleteBudget(budgetId: String) {
         budgetRef.document(budgetId).delete()
+    }
+
+    // ==========================================
+    // --- KHU VỰC 5: GIAO DỊCH LẶP LẠI (RECURRING) ---
+    // ==========================================
+    private val recurringRef get() = firestore
+        .collection("users")
+        .document(userId)
+        .collection("recurring")
+
+    fun getRecurringExpenses(onResult: (List<RecurringExpense>) -> Unit) {
+        recurringRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                onResult(emptyList())
+                return@addSnapshotListener
+            }
+            val list = snapshot?.documents?.mapNotNull { doc ->
+                doc.toObject(RecurringExpense::class.java)?.apply { id = doc.id }
+            } ?: emptyList()
+            onResult(list)
+        }
+    }
+
+    fun saveRecurring(recurring: RecurringExpense, onSuccess: () -> Unit) {
+        val docRef = if (recurring.id.isEmpty()) recurringRef.document() else recurringRef.document(recurring.id)
+        val dataToSave = recurring.copy(id = docRef.id)
+        docRef.set(dataToSave).addOnSuccessListener { onSuccess() }
+    }
+
+    fun deleteRecurring(recurringId: String) {
+        recurringRef.document(recurringId).delete()
     }
 }

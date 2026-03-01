@@ -15,6 +15,7 @@ import com.personal.studentlifemanager.ui.screens.HomeScreen
 import com.personal.studentlifemanager.ui.screens.LoginScreen
 import com.personal.studentlifemanager.ui.screens.CategoryScreen
 import com.personal.studentlifemanager.ui.screens.ExpenseAnalyticsScreen
+import com.personal.studentlifemanager.ui.screens.RecurringScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -63,7 +64,7 @@ class MainActivity : ComponentActivity() {
                             onNavigateToAnalytics = { navController.navigate("expense_analytics") },
                             onNavigateToCategory = { navController.navigate("category_manage") },
                             onNavigateToBudget = { navController.navigate("budget")},
-
+                            onNavigateToRecurring = { navController.navigate("recurring") }
                         )
                     }
 
@@ -86,6 +87,10 @@ class MainActivity : ComponentActivity() {
                         BudgetScreen(onBack = { navController.popBackStack() })
                     }
 
+                    // Màn hình Giao dịch định kỳ
+                    composable("recurring") {
+                        RecurringScreen(onBack = { navController.popBackStack() })
+                    }
                 }
             }
         }
