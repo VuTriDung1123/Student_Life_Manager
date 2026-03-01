@@ -220,4 +220,43 @@ class ExpenseViewModel : ViewModel() {
         }
         return maxAmount
     }
+
+    // ==========================================
+    // --- KHU VỰC 7: AI PHÂN TÍCH & DỰ ĐOÁN ---
+    // ==========================================
+
+    // Thuật toán 1: Phát hiện chi tiêu bất thường
+    fun isAbnormalExpense(amount: Double): Boolean {
+        val expenseList = allTransactions.filter { !it.isIncome && !it.isTransfer }
+        if (expenseList.isEmpty()) return false
+
+        // Tính trung bình 1 lần chi tiêu của bạn
+        val avgExpense = expenseList.sumOf { it.amount } / expenseList.size
+
+        // Bất thường = Lớn hơn 3 lần mức trung bình VÀ phải lớn hơn 500k (bỏ qua mấy khoản lặt vặt)
+        return amount > (avgExpense * 3) && amount > 500000.0
+    }
+
+    // Thuật toán 2: Dự đoán tổng chi tiêu cuối tháng dựa trên tốc độ tiêu tiền hiện tại
+    fun getPredictedEndOfMonthExpense(): Double {
+        val currentMonthExpenses = filteredTransactions.filter { !it.isIncome && !it.isTransfer }.sumOf { it.amount }
+
+        val cal = Calendar.getInstance()
+        val todayMonth = cal.get(Calendar.MONTH)
+        val todayYear = cal.get(Calendar.YEAR)
+
+        // Chỉ dự đoán cho tháng hiện tại đang diễn ra
+        if (selectedMonth == todayMonth && selectedYear == todayYear) {
+            val currentDay = cal.get(Calendar.DAY_OF_MONTH)
+            val maxDays = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+            if (currentDay == 0) return currentMonthExpenses
+
+            // Tốc độ đốt tiền 1 ngày
+            val dailyBurnRate = currentMonthExpenses / currentDay
+            // Dự đoán cả tháng
+            return dailyBurnRate * maxDays
+        }
+        return currentMonthExpenses // Nếu xem tháng cũ thì trả về số thực tế
+    }
 }

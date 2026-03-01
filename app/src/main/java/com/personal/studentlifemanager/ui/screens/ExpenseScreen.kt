@@ -302,6 +302,10 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
 
     val datePickerDialog = DatePickerDialog(context, { _, y, m, d -> val cal = Calendar.getInstance(); cal.set(y,m,d); selectedDateMillis = cal.timeInMillis }, Calendar.getInstance().get(Calendar.YEAR), Calendar.getInstance().get(Calendar.MONTH), Calendar.getInstance().get(Calendar.DAY_OF_MONTH))
 
+    // Trạng thái hiển thị Popup cảnh báo
+    var showAbnormalWarning by remember { mutableStateOf(false) }
+    var pendingTransactionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
     // 🔥 LOGIC AI: BỘ CHỌN ẢNH VÀ TRẠNG THÁI LOADING
     var isProcessingAI by remember { mutableStateOf(false) }
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -382,17 +386,49 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
             onClick = {
                 val parsedAmount = amount.toDoubleOrNull() ?: 0.0
                 if (parsedAmount > 0) {
-                    if (txType == 2 && selectedWallet != null && selectedToWallet != null && selectedWallet != selectedToWallet) {
-                        val transaction = Transaction(editingTransaction?.id ?: "", parsedAmount, note, selectedDateMillis, "", false, selectedWallet!!.id, true, selectedToWallet!!.id)
-                        if (editingTransaction == null) viewModel.addTransfer(parsedAmount, note, selectedWallet!!.id, selectedToWallet!!.id, selectedDateMillis, onSaved) else viewModel.updateTransaction(transaction, onSaved)
-                    } else if (txType != 2 && selectedCategory != null && selectedWallet != null) {
-                        val transaction = Transaction(editingTransaction?.id ?: "", parsedAmount, note, selectedDateMillis, selectedCategory!!.id, txType == 1, selectedWallet!!.id, false, "")
-                        if (editingTransaction == null) viewModel.addTransaction(parsedAmount, note, selectedCategory!!.id, selectedWallet!!.id, txType == 1, onSaved) else viewModel.updateTransaction(transaction, onSaved)
+                    // Gom chung logic lưu lại thành 1 cục
+                    val saveAction = {
+                        if (txType == 2 && selectedWallet != null && selectedToWallet != null && selectedWallet != selectedToWallet) {
+                            val transaction = Transaction(editingTransaction?.id ?: "", parsedAmount, note, selectedDateMillis, "", false, selectedWallet!!.id, true, selectedToWallet!!.id)
+                            if (editingTransaction == null) viewModel.addTransfer(parsedAmount, note, selectedWallet!!.id, selectedToWallet!!.id, selectedDateMillis, onSaved) else viewModel.updateTransaction(transaction, onSaved)
+                        } else if (txType != 2 && selectedCategory != null && selectedWallet != null) {
+                            val transaction = Transaction(editingTransaction?.id ?: "", parsedAmount, note, selectedDateMillis, selectedCategory!!.id, txType == 1, selectedWallet!!.id, false, "")
+                            if (editingTransaction == null) viewModel.addTransaction(parsedAmount, note, selectedCategory!!.id, selectedWallet!!.id, txType == 1, onSaved) else viewModel.updateTransaction(transaction, onSaved)
+                        }
+                    }
+
+                    // 🚨 KIỂM TRA BẤT THƯỜNG TRƯỚC KHI LƯU
+                    if (txType == 0 && editingTransaction == null && viewModel.isAbnormalExpense(parsedAmount)) {
+                        pendingTransactionAction = saveAction
+                        showAbnormalWarning = true // Bật popup
+                    } else {
+                        saveAction() // Chạy luôn nếu bình thường
                     }
                 }
             },
             modifier = Modifier.fillMaxWidth().height(50.dp)
         ) { Text(if (editingTransaction == null) "Lưu" else "Cập nhật") }
+
+        // 🚨 HIỂN THỊ POPUP CẢNH BÁO
+        if (showAbnormalWarning) {
+            AlertDialog(
+                onDismissRequest = { showAbnormalWarning = false },
+                title = { Text("Khoản chi bất thường!", fontWeight = FontWeight.Bold, color = Color(0xFFF44336)) },
+                text = { Text("Khoản tiền này lớn hơn rất nhiều so với thói quen chi tiêu bình thường của bạn. Bạn có chắc chắn muốn lưu không?") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showAbnormalWarning = false
+                            pendingTransactionAction?.invoke() // Chạy hàm lưu
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))
+                    ) { Text("Vẫn Lưu") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAbnormalWarning = false }) { Text("Kiểm tra lại") }
+                }
+            )
+        }
     }
 }
 
