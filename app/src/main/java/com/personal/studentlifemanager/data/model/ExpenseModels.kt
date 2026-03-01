@@ -33,7 +33,8 @@ data class Transaction(
     @get:PropertyName("isTransfer")
     @set:PropertyName("isTransfer")
     var isTransfer: Boolean = false,
-    var toWalletId: String = "" // ID của ví nhận tiền (nếu là giao dịch chuyển tiền)
+    var toWalletId: String = "",
+    var currency: String = "VND"
 )
 
 // --- THÊM CLASS NGÂN SÁCH MỚI ---
