@@ -5,10 +5,12 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.widget.DatePicker
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -35,25 +37,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.studentlifemanager.data.model.Transaction
+import kotlinx.coroutines.launch
+import java.io.OutputStreamWriter
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
-import androidx.biometric.BiometricPrompt
-import androidx.core.content.ContextCompat
-import androidx.fragment.app.FragmentActivity
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import android.net.Uri
 
-// --- HÀM LẮNG NGHE MẠNG OFFLINE/ONLINE ---
 @Composable
 fun connectivityState(context: Context): State<Boolean> {
     val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    val isConnected = remember {
-        mutableStateOf(connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true)
-    }
-
+    val isConnected = remember { mutableStateOf(connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true) }
     DisposableEffect(context) {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) { isConnected.value = true }
@@ -77,71 +70,61 @@ fun ExpenseScreen(
 ) {
     var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
     var showBottomSheet by remember { mutableStateOf(false) }
+    var quickAddType by remember { mutableIntStateOf(0) } // 0: Chi, 1: Thu, 2: Chuyển
+
+    // 🔥 1. SNACKBAR STATE (CHO TÍNH NĂNG UNDO)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
     val transactions = viewModel.filteredTransactions
     val formatter = NumberFormat.getCurrencyInstance(Locale("vi", "VN"))
     val context = LocalContext.current
-
-    // 🔥 Lắng nghe trạng thái Offline
     val isOnline by connectivityState(context)
 
-    // 🔥 HÀM CHE SỐ TIỀN (SECURITY)
-    val displayMoney = { amount: Double ->
-        if (viewModel.isBalanceHidden) "****** ₫" else formatter.format(amount)
-    }
+    val displayMoney = { amount: Double -> if (viewModel.isBalanceHidden) "****** ₫" else formatter.format(amount) }
 
     val totalIncome = transactions.filter { it.isIncome && !it.isTransfer }.sumOf { it.amount }
     val totalExpense = transactions.filter { !it.isIncome && !it.isTransfer }.sumOf { it.amount }
     val balance = totalIncome - totalExpense
 
+    // 🔥 2. XUẤT FILE CSV
+    var csvContentToSave by remember { mutableStateOf("") }
+    val csvExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        uri?.let {
+            context.contentResolver.openOutputStream(it)?.use { os ->
+                OutputStreamWriter(os, "UTF-8").use { writer ->
+                    writer.write("\uFEFF") // Thêm BOM để Excel đọc tiếng Việt không bị lỗi font
+                    writer.write(csvContentToSave)
+                }
+            }
+            Toast.makeText(context, "Đã lưu báo cáo CSV thành công!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }, // Gắn Snackbar vào Scaffold
         topBar = {
             TopAppBar(
-                title = { Text("Quản lý chi tiêu", fontWeight = FontWeight.Bold) },
+                title = { Text("Chi tiêu", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
-                    // 🔥 NÚT ẨN/HIỆN SỐ TIỀN BẰNG CON MẮT
+                    // Nút xuất Excel (CSV)
                     IconButton(onClick = {
-                        if (viewModel.isBalanceHidden) {
-                            // Đang ẩn -> Muốn HIỆN thì phải quét vân tay
-                            val fragmentActivity = context as? FragmentActivity
-                            if (fragmentActivity != null) {
-                                val executor = ContextCompat.getMainExecutor(context)
-                                val biometricPrompt = BiometricPrompt(fragmentActivity, executor,
-                                    object : BiometricPrompt.AuthenticationCallback() {
-                                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                                            super.onAuthenticationSucceeded(result)
-                                            // 🟢 Quét đúng -> Cho hiện số tiền
-                                            viewModel.toggleBalanceVisibility()
-                                        }
-
-                                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                                            super.onAuthenticationError(errorCode, errString)
-                                            Toast.makeText(context, "Lỗi xác thực: $errString", Toast.LENGTH_SHORT).show()
-                                        }
-                                    })
-
-                                val promptInfo = BiometricPrompt.PromptInfo.Builder()
-                                    .setTitle("Bảo mật ứng dụng")
-                                    .setSubtitle("Quét vân tay / khuôn mặt để xem số dư")
-                                    .setNegativeButtonText("Hủy")
-                                    .build()
-
-                                biometricPrompt.authenticate(promptInfo)
-                            } else {
-                                Toast.makeText(context, "Thiết bị không hỗ trợ", Toast.LENGTH_SHORT).show()
-                            }
-                        } else {
-                            // Đang hiện -> Muốn ẨN thì cho ẩn luôn, không cần hỏi
-                            viewModel.toggleBalanceVisibility()
+                        val header = "Ngày,Loại,Danh mục,Nguồn tiền,Số tiền,Ghi chú\n"
+                        val data = transactions.joinToString("\n") { t ->
+                            val date = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(t.date)
+                            val type = if (t.isTransfer) "Chuyển tiền" else if (t.isIncome) "Thu nhập" else "Chi tiêu"
+                            val cat = viewModel.categories.find { c -> c.id == t.categoryId }?.name ?: ""
+                            val wallet = viewModel.wallets.find { w -> w.id == t.walletId }?.name ?: ""
+                            val amt = t.amount.toLong().toString()
+                            val note = t.note.replace(",", " ") // Xóa dấu phẩy để không làm hỏng file CSV
+                            "$date,$type,$cat,$wallet,$amt,$note"
                         }
-                    }) {
-                        Icon(
-                            imageVector = if (viewModel.isBalanceHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = "Bảo mật",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                        csvContentToSave = header + data
+                        csvExportLauncher.launch("BaoCaoChiTieu_T${viewModel.selectedMonth + 1}.csv")
+                    }) { Icon(Icons.Default.Download, "Xuất CSV", tint = MaterialTheme.colorScheme.primary) }
+
+                    IconButton(onClick = { viewModel.toggleBalanceVisibility() }) { Icon(if (viewModel.isBalanceHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility, "Bảo mật", tint = MaterialTheme.colorScheme.primary) }
                     IconButton(onClick = onNavigateToRecurring) { Icon(Icons.Default.Autorenew, null, tint = MaterialTheme.colorScheme.primary) }
                     IconButton(onClick = onNavigateToBudget) { Icon(Icons.Default.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary) }
                     IconButton(onClick = onNavigateToCategory) { Icon(Icons.Default.List, null, tint = MaterialTheme.colorScheme.primary) }
@@ -150,19 +133,44 @@ fun ExpenseScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { editingTransaction = null; showBottomSheet = true }) {
-                Icon(Icons.Default.Add, null)
+            // 🔥 3. QUICK ADD (EXPANDING FAB)
+            var fabExpanded by remember { mutableStateOf(false) }
+
+            Column(horizontalAlignment = Alignment.End) {
+                AnimatedVisibility(
+                    visible = fabExpanded,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { it })
+                ) {
+                    Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(bottom = 16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Thu nhập", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color.White, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            SmallFloatingActionButton(onClick = { fabExpanded = false; editingTransaction = null; quickAddType = 1; showBottomSheet = true }, containerColor = Color(0xFFC8E6C9)) { Icon(Icons.Default.ArrowDownward, "Thu", tint = Color(0xFF388E3C)) }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Chuyển ví", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color.White, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            SmallFloatingActionButton(onClick = { fabExpanded = false; editingTransaction = null; quickAddType = 2; showBottomSheet = true }, containerColor = Color(0xFFBBDEFB)) { Icon(Icons.Default.SyncAlt, "Chuyển", tint = Color(0xFF1976D2)) }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Chi tiêu", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color.White, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            SmallFloatingActionButton(onClick = { fabExpanded = false; editingTransaction = null; quickAddType = 0; showBottomSheet = true }, containerColor = Color(0xFFFFCDD2)) { Icon(Icons.Default.ArrowUpward, "Chi", tint = Color(0xFFD32F2F)) }
+                        }
+                    }
+                }
+                FloatingActionButton(onClick = { fabExpanded = !fabExpanded }, containerColor = MaterialTheme.colorScheme.primary) {
+                    Icon(if (fabExpanded) Icons.Default.Close else Icons.Default.Add, null, tint = Color.White)
+                }
             }
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-
-            // 🔥 BANNER THÔNG BÁO OFFLINE FIRST
             AnimatedVisibility(visible = !isOnline, enter = expandVertically(), exit = shrinkVertically()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().background(Color(0xFFFFF9C4)).padding(vertical = 8.dp, horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(modifier = Modifier.fillMaxWidth().background(Color(0xFFFFF9C4)).padding(vertical = 8.dp, horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.CloudOff, contentDescription = "Offline", tint = Color(0xFFF57F17), modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Đang Offline. Dữ liệu sẽ tự đồng bộ khi có mạng.", fontSize = 12.sp, color = Color(0xFFF57F17), fontWeight = FontWeight.Bold)
@@ -179,21 +187,15 @@ fun ExpenseScreen(
                         Card(colors = CardDefaults.cardColors(containerColor = try { Color(android.graphics.Color.parseColor(wallet.colorHex)).copy(alpha = 0.2f) } catch(e:Exception){Color.LightGray})) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(wallet.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                // Áp dụng che tiền
                                 Text(displayMoney(walletBalance), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
                             }
                         }
                     }
                 }
 
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
+                Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = RoundedCornerShape(20.dp)) {
                     Column(modifier = Modifier.padding(20.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Số dư tháng này", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
-                        // Áp dụng che tiền
                         Text(displayMoney(balance), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                         Spacer(modifier = Modifier.height(20.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -218,11 +220,29 @@ fun ExpenseScreen(
                 )
 
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(transactions) { transaction ->
-                        TransactionItem(transaction, viewModel, displayMoney) {
-                            editingTransaction = transaction
-                            showBottomSheet = true
-                        }
+                    items(transactions, key = { it.id }) { transaction ->
+                        TransactionItem(
+                            transaction = transaction,
+                            viewModel = viewModel,
+                            displayMoney = displayMoney,
+                            onClick = { editingTransaction = transaction; showBottomSheet = true },
+                            onDelete = {
+                                // 🔥 LOGIC XÓA CÓ UNDO
+                                val deletedTx = transaction
+                                viewModel.deleteTransaction(transaction.id)
+                                coroutineScope.launch {
+                                    val result = snackbarHostState.showSnackbar(
+                                        message = "Đã xóa giao dịch ${formatter.format(deletedTx.amount)}",
+                                        actionLabel = "HOÀN TÁC",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                    if (result == SnackbarResult.ActionPerformed) {
+                                        // Hoàn tác: Ghi lại dữ liệu cũ bằng hàm update
+                                        viewModel.updateTransaction(deletedTx) {}
+                                    }
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -230,14 +250,14 @@ fun ExpenseScreen(
 
         if (showBottomSheet) {
             ModalBottomSheet(onDismissRequest = { showBottomSheet = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-                AddTransactionForm(viewModel, editingTransaction) { showBottomSheet = false }
+                AddTransactionForm(viewModel, editingTransaction, initialTxType = quickAddType) { showBottomSheet = false }
             }
         }
     }
 }
 
 @Composable
-fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, displayMoney: (Double) -> String, onClick: () -> Unit) {
+fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, displayMoney: (Double) -> String, onClick: () -> Unit, onDelete: () -> Unit) {
     val dateString = SimpleDateFormat("dd/MM", Locale.getDefault()).format(transaction.date)
 
     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable { onClick() }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
@@ -245,9 +265,7 @@ fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, displ
             if (transaction.isTransfer) {
                 val fromWallet = viewModel.wallets.find { it.id == transaction.walletId }?.name ?: "?"
                 val toWallet = viewModel.wallets.find { it.id == transaction.toWalletId }?.name ?: "?"
-                Box(modifier = Modifier.size(40.dp).background(Color(0xFF2196F3), CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.SyncAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                }
+                Box(modifier = Modifier.size(40.dp).background(Color(0xFF2196F3), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Default.SyncAlt, null, tint = Color.White, modifier = Modifier.size(20.dp)) }
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Chuyển tiền", fontWeight = FontWeight.Bold)
@@ -256,13 +274,11 @@ fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, displ
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(displayMoney(transaction.amount), color = Color(0xFF2196F3), fontWeight = FontWeight.Bold)
-                    IconButton(onClick = { viewModel.deleteTransaction(transaction.id) }, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Delete, null, tint = Color.LightGray) }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Delete, null, tint = Color.LightGray) }
                 }
             } else {
                 val category = viewModel.categories.find { it.id == transaction.categoryId }
-                Box(modifier = Modifier.size(40.dp).background(Color(android.graphics.Color.parseColor(category?.colorHex ?: "#CCCCCC")), CircleShape), contentAlignment = Alignment.Center) {
-                    Text(category?.name?.take(1) ?: "?", fontWeight = FontWeight.Bold)
-                }
+                Box(modifier = Modifier.size(40.dp).background(Color(android.graphics.Color.parseColor(category?.colorHex ?: "#CCCCCC")), CircleShape), contentAlignment = Alignment.Center) { Text(category?.name?.take(1) ?: "?", fontWeight = FontWeight.Bold) }
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(category?.name ?: "Khác", fontWeight = FontWeight.Bold)
@@ -272,20 +288,17 @@ fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, displ
                 Column(horizontalAlignment = Alignment.End) {
                     val sign = if(transaction.isIncome) "+" else "-"
                     val amountText = if (displayMoney(transaction.amount) == "****** ₫") "****** ₫" else "$sign${displayMoney(transaction.amount)}"
-
                     Text(text = amountText, color = if (transaction.isIncome) Color(0xFF4CAF50) else Color(0xFFF44336), fontWeight = FontWeight.Bold)
-                    IconButton(onClick = { viewModel.deleteTransaction(transaction.id) }, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Delete, null, tint = Color.LightGray) }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Delete, null, tint = Color.LightGray) }
                 }
             }
         }
     }
 }
 
-// ... (Giữ nguyên các hàm AddTransactionForm và MonthNavigation bên dưới như file cũ của bạn nhé, không cần thay đổi gì thêm)
-
 @Composable
-fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transaction?, onSaved: () -> Unit) {
-    var txType by remember { mutableIntStateOf(if (editingTransaction?.isTransfer == true) 2 else if (editingTransaction?.isIncome == true) 1 else 0) }
+fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transaction?, initialTxType: Int, onSaved: () -> Unit) {
+    var txType by remember { mutableIntStateOf(if (editingTransaction?.isTransfer == true) 2 else if (editingTransaction?.isIncome == true) 1 else if (editingTransaction != null) 0 else initialTxType) }
     var amount by remember { mutableStateOf(if (editingTransaction != null) String.format(Locale.US, "%.0f", editingTransaction.amount) else "") }
     var note by remember { mutableStateOf(editingTransaction?.note ?: "") }
 
@@ -302,30 +315,21 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
 
     val datePickerDialog = DatePickerDialog(context, { _, y, m, d -> val cal = Calendar.getInstance(); cal.set(y,m,d); selectedDateMillis = cal.timeInMillis }, Calendar.getInstance().get(Calendar.YEAR), Calendar.getInstance().get(Calendar.MONTH), Calendar.getInstance().get(Calendar.DAY_OF_MONTH))
 
-    // Trạng thái hiển thị Popup cảnh báo
-    var showAbnormalWarning by remember { mutableStateOf(false) }
-    var pendingTransactionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-
-    // 🔥 LOGIC AI: BỘ CHỌN ẢNH VÀ TRẠNG THÁI LOADING
     var isProcessingAI by remember { mutableStateOf(false) }
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             isProcessingAI = true
             viewModel.processReceiptImage(
-                context = context,
-                uri = it,
-                onResult = { extractedAmount ->
-                    amount = extractedAmount // Điền luôn số tiền vào UI
-                    Toast.makeText(context, "Đã quét thành công số tiền: $extractedAmount", Toast.LENGTH_SHORT).show()
-                    isProcessingAI = false
-                },
-                onError = {
-                    Toast.makeText(context, "Không nhận diện được số tiền trên hóa đơn!", Toast.LENGTH_SHORT).show()
-                    isProcessingAI = false
-                }
+                context = context, uri = it,
+                onResult = { extractedAmount -> amount = extractedAmount; Toast.makeText(context, "Quét thành công: $extractedAmount", Toast.LENGTH_SHORT).show(); isProcessingAI = false },
+                onError = { Toast.makeText(context, "Không nhận diện được số tiền!", Toast.LENGTH_SHORT).show(); isProcessingAI = false }
             )
         }
     }
+
+    // Trạng thái hiển thị Popup cảnh báo
+    var showAbnormalWarning by remember { mutableStateOf(false) }
+    var pendingTransactionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(if (editingTransaction == null) "Giao dịch mới" else "Sửa giao dịch", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -336,7 +340,6 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
             FilterChip(selected = txType == 2, onClick = { txType = 2 }, label = { Text("Chuyển ví") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFBBDEFB)))
         }
 
-        // ... [Phần chọn Ví và Danh mục giữ nguyên như cũ, mình viết gọn lại xíu]
         if (txType == 2) {
             Text("Từ ví:", style = MaterialTheme.typography.labelMedium, modifier = Modifier.align(Alignment.Start))
             LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(wallets) { w -> FilterChip(selected = selectedWallet?.id == w.id, onClick = { selectedWallet = w }, label = { Text(w.name) }) } }
@@ -352,30 +355,13 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
         OutlinedButton(onClick = { datePickerDialog.show() }, modifier = Modifier.fillMaxWidth()) { Text("Ngày: $dateString", color = MaterialTheme.colorScheme.onSurface) }
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 🔥 GIAO DIỆN QUÉT HÓA ĐƠN
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = amount,
-                onValueChange = { amount = it },
-                label = { Text("Số tiền") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1f)
-            )
+            OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Số tiền") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.width(8.dp))
-
-            // Nút Kích hoạt AI
             Button(
-                onClick = { galleryLauncher.launch("image/*") }, // Mở thư viện ảnh
-                modifier = Modifier.height(56.dp).padding(top = 8.dp),
-                shape = RoundedCornerShape(8.dp),
-                enabled = !isProcessingAI
-            ) {
-                if (isProcessingAI) {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                } else {
-                    Icon(Icons.Default.DocumentScanner, contentDescription = "Quét Bill")
-                }
-            }
+                onClick = { galleryLauncher.launch("image/*") },
+                modifier = Modifier.height(56.dp).padding(top = 8.dp), shape = RoundedCornerShape(8.dp), enabled = !isProcessingAI
+            ) { if (isProcessingAI) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp)) else Icon(Icons.Default.DocumentScanner, "Quét Bill") }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -386,7 +372,6 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
             onClick = {
                 val parsedAmount = amount.toDoubleOrNull() ?: 0.0
                 if (parsedAmount > 0) {
-                    // Gom chung logic lưu lại thành 1 cục
                     val saveAction = {
                         if (txType == 2 && selectedWallet != null && selectedToWallet != null && selectedWallet != selectedToWallet) {
                             val transaction = Transaction(editingTransaction?.id ?: "", parsedAmount, note, selectedDateMillis, "", false, selectedWallet!!.id, true, selectedToWallet!!.id)
@@ -397,36 +382,24 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
                         }
                     }
 
-                    // 🚨 KIỂM TRA BẤT THƯỜNG TRƯỚC KHI LƯU
                     if (txType == 0 && editingTransaction == null && viewModel.isAbnormalExpense(parsedAmount)) {
                         pendingTransactionAction = saveAction
-                        showAbnormalWarning = true // Bật popup
+                        showAbnormalWarning = true
                     } else {
-                        saveAction() // Chạy luôn nếu bình thường
+                        saveAction()
                     }
                 }
             },
             modifier = Modifier.fillMaxWidth().height(50.dp)
         ) { Text(if (editingTransaction == null) "Lưu" else "Cập nhật") }
 
-        // 🚨 HIỂN THỊ POPUP CẢNH BÁO
         if (showAbnormalWarning) {
             AlertDialog(
                 onDismissRequest = { showAbnormalWarning = false },
                 title = { Text("Khoản chi bất thường!", fontWeight = FontWeight.Bold, color = Color(0xFFF44336)) },
                 text = { Text("Khoản tiền này lớn hơn rất nhiều so với thói quen chi tiêu bình thường của bạn. Bạn có chắc chắn muốn lưu không?") },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            showAbnormalWarning = false
-                            pendingTransactionAction?.invoke() // Chạy hàm lưu
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))
-                    ) { Text("Vẫn Lưu") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showAbnormalWarning = false }) { Text("Kiểm tra lại") }
-                }
+                confirmButton = { Button(onClick = { showAbnormalWarning = false; pendingTransactionAction?.invoke() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))) { Text("Vẫn Lưu") } },
+                dismissButton = { TextButton(onClick = { showAbnormalWarning = false }) { Text("Kiểm tra lại") } }
             )
         }
     }
