@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -119,6 +120,35 @@ fun ExpenseAnalyticsScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = vie
                                 Column {
                                     Text(if (diffExpense > 0) "Tiêu nhiều hơn tháng trước" else "Tiết kiệm hơn tháng trước", fontWeight = FontWeight.Bold)
                                     Text("${formatter.format(Math.abs(diffExpense))} (${String.format("%.1f", Math.abs(diffPercent))}%)", color = if (diffExpense > 0) Color(0xFFF44336) else Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // --- 1.5. DỰ ĐOÁN CHI TIÊU CUỐI THÁNG (FORECASTING) ---
+                if (selectedTabIndex == 0) {
+                    item {
+                        val predictedExpense = viewModel.getPredictedEndOfMonthExpense()
+                        val isDanger = predictedExpense > totalIncome && totalIncome > 0
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                            colors = CardDefaults.cardColors(containerColor = if (isDanger) Color(0xFFFFEBEE) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Insights, contentDescription = "Dự báo", tint = if (isDanger) Color(0xFFF44336) else MaterialTheme.colorScheme.primary)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Dự báo AI cuối tháng", fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("Với tốc độ chi tiêu hiện tại, ước tính tổng chi tháng này của bạn sẽ là:", fontSize = 13.sp, color = Color.Gray)
+                                Text(formatter.format(predictedExpense), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = if (isDanger) Color(0xFFF44336) else MaterialTheme.colorScheme.onSurface)
+
+                                if (isDanger) {
+                                    Text("⚠️ Cảnh báo: Bạn có nguy cơ tiêu vượt quá tổng thu nhập!", color = Color(0xFFF44336), fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp), fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
