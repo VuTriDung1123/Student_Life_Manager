@@ -23,7 +23,7 @@ class ExpenseViewModel : ViewModel() {
         private set
     var recurringExpenses by mutableStateOf<List<RecurringExpense>>(emptyList())
         private set
-    var isBalanceHidden by mutableStateOf(false)
+    var isBalanceHidden by mutableStateOf(true)
         private set
 
     var selectedMonth by mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH))
