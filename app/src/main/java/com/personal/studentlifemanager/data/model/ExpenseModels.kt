@@ -2,24 +2,20 @@ package com.personal.studentlifemanager.data.model
 
 import com.google.firebase.firestore.PropertyName
 
-
-// --- THÊM CLASS VÍ TIỀN MỚI ---
-data class Wallet(
-    var id: String = "",
-    var name: String = "",
-    var colorHex: String = "#4CAF50" // Màu mặc định
-)
-
-
 data class Category(
     var id: String = "",
     var name: String = "",
     var iconName: String = "",
     var colorHex: String = "",
-    // Ép Firebase phải lưu và đọc đúng chữ "isIncome"
     @get:PropertyName("isIncome")
     @set:PropertyName("isIncome")
     var isIncome: Boolean = false
+)
+
+data class Wallet(
+    var id: String = "",
+    var name: String = "",
+    var colorHex: String = "#4CAF50"
 )
 
 data class Transaction(
@@ -28,9 +24,14 @@ data class Transaction(
     var note: String = "",
     var date: Long = 0L,
     var categoryId: String = "",
-    // Ép Firebase phải lưu và đọc đúng chữ "isIncome"
     @get:PropertyName("isIncome")
     @set:PropertyName("isIncome")
     var isIncome: Boolean = false,
-    var walletId: String = ""
+    var walletId: String = "",
+
+    // 🔥 THÊM 2 TRƯỜNG NÀY ĐỂ XỬ LÝ CHUYỂN TIỀN
+    @get:PropertyName("isTransfer")
+    @set:PropertyName("isTransfer")
+    var isTransfer: Boolean = false,
+    var toWalletId: String = "" // ID của ví nhận tiền (nếu là giao dịch chuyển tiền)
 )
