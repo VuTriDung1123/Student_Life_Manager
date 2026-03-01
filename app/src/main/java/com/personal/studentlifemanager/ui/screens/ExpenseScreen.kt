@@ -38,6 +38,10 @@ import com.personal.studentlifemanager.data.model.Transaction
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import android.widget.Toast
 
 // --- HÀM LẮNG NGHE MẠNG OFFLINE/ONLINE ---
 @Composable
@@ -94,7 +98,41 @@ fun ExpenseScreen(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
                     // 🔥 NÚT ẨN/HIỆN SỐ TIỀN BẰNG CON MẮT
-                    IconButton(onClick = { viewModel.toggleBalanceVisibility() }) {
+                    IconButton(onClick = {
+                        if (viewModel.isBalanceHidden) {
+                            // Đang ẩn -> Muốn HIỆN thì phải quét vân tay
+                            val fragmentActivity = context as? FragmentActivity
+                            if (fragmentActivity != null) {
+                                val executor = ContextCompat.getMainExecutor(context)
+                                val biometricPrompt = BiometricPrompt(fragmentActivity, executor,
+                                    object : BiometricPrompt.AuthenticationCallback() {
+                                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                                            super.onAuthenticationSucceeded(result)
+                                            // 🟢 Quét đúng -> Cho hiện số tiền
+                                            viewModel.toggleBalanceVisibility()
+                                        }
+
+                                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                                            super.onAuthenticationError(errorCode, errString)
+                                            Toast.makeText(context, "Lỗi xác thực: $errString", Toast.LENGTH_SHORT).show()
+                                        }
+                                    })
+
+                                val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                                    .setTitle("Bảo mật ứng dụng")
+                                    .setSubtitle("Quét vân tay / khuôn mặt để xem số dư")
+                                    .setNegativeButtonText("Hủy")
+                                    .build()
+
+                                biometricPrompt.authenticate(promptInfo)
+                            } else {
+                                Toast.makeText(context, "Thiết bị không hỗ trợ", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            // Đang hiện -> Muốn ẨN thì cho ẩn luôn, không cần hỏi
+                            viewModel.toggleBalanceVisibility()
+                        }
+                    }) {
                         Icon(
                             imageVector = if (viewModel.isBalanceHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                             contentDescription = "Bảo mật",
