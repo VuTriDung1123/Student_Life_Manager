@@ -23,6 +23,7 @@ import com.personal.studentlifemanager.ui.screens.HomeScreen
 import com.personal.studentlifemanager.ui.screens.LoginScreen
 import com.personal.studentlifemanager.ui.screens.CategoryScreen
 import com.personal.studentlifemanager.ui.screens.ExpenseAnalyticsScreen
+import com.personal.studentlifemanager.ui.screens.PomodoroScreen
 import com.personal.studentlifemanager.ui.screens.RecurringScreen
 import com.personal.studentlifemanager.worker.ReminderWorker // 🔥 IMPORT ĐÚNG THƯ MỤC CỦA BẠN
 import java.util.Calendar
@@ -82,9 +83,14 @@ class MainActivity : FragmentActivity() {
                             },
                             onNavigateToExpense = {
                                 navController.navigate("expense")
+                            },
+                            onNavigateToPomodoro = { // 🔥 Truyền lệnh chuyển sang Pomodoro
+                                navController.navigate("pomodoro")
                             }
                         )
                     }
+
+
 
                     // 3. Màn hình Chi tiêu (Trang chính)
                     composable("expense") {
@@ -94,6 +100,16 @@ class MainActivity : FragmentActivity() {
                             onNavigateToCategory = { navController.navigate("category_manage") },
                             onNavigateToBudget = { navController.navigate("budget")},
                             onNavigateToRecurring = { navController.navigate("recurring") }
+                        )
+                    }
+
+                    // MÀN HÌNH POMODORO
+                    composable("pomodoro") {
+                        PomodoroScreen(
+                            onBack = { navController.popBackStack() },
+                            onNavigateToTimer = {
+                                // Tạm thời để trống, lát nữa mình tạo màn hình Đếm ngược rồi gọi sau
+                            }
                         )
                     }
 
