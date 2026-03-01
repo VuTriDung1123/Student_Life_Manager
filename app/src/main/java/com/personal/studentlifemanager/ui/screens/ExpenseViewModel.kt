@@ -2,6 +2,7 @@ package com.personal.studentlifemanager.ui.screens
 
 import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
+import com.personal.studentlifemanager.data.model.Budget
 import com.personal.studentlifemanager.data.model.Category
 import com.personal.studentlifemanager.data.model.Transaction
 import com.personal.studentlifemanager.data.model.Wallet
@@ -16,6 +17,8 @@ class ExpenseViewModel : ViewModel() {
     var categories by mutableStateOf<List<Category>>(emptyList())
         private set
     var wallets by mutableStateOf<List<Wallet>>(emptyList())
+        private set
+    var budgets by mutableStateOf<List<Budget>>(emptyList())
         private set
 
     var selectedMonth by mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH))
@@ -37,6 +40,7 @@ class ExpenseViewModel : ViewModel() {
         repository.getTransactions { transactions = it }
         repository.getCategories { list -> if (list.isEmpty()) seedDefaultCategories() else categories = list }
         repository.getWallets { list -> if (list.isEmpty()) seedDefaultWallets() else wallets = list }
+        repository.getBudgets { list -> budgets = list }
     }
 
     // 🔥 HÀM TÍNH SỐ DƯ TỪNG VÍ (Tuyệt chiêu xử lý dòng tiền)
@@ -84,4 +88,20 @@ class ExpenseViewModel : ViewModel() {
         repository.addCategory(Category("", name, "Default", colorHex, isIncome), onSuccess)
     }
     fun deleteCategory(categoryId: String) = repository.deleteCategory(categoryId)
+
+    // --- HÀM XỬ LÝ NGÂN SÁCH ---
+    fun saveBudget(categoryId: String, limit: Double, onSuccess: () -> Unit) {
+        // Tìm xem tháng này đã có ngân sách cho danh mục này chưa để ghi đè (sửa) hoặc tạo mới
+        val existing = budgets.find { it.categoryId == categoryId && it.month == selectedMonth && it.year == selectedYear }
+        val budget = Budget(
+            id = existing?.id ?: "",
+            categoryId = categoryId,
+            amountLimit = limit,
+            month = selectedMonth,
+            year = selectedYear
+        )
+        repository.saveBudget(budget, onSuccess)
+    }
+
+    fun deleteBudget(budgetId: String) = repository.deleteBudget(budgetId)
 }

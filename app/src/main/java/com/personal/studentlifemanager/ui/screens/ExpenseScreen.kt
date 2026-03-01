@@ -27,6 +27,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import androidx.navigation.compose.rememberNavController
 import com.personal.studentlifemanager.data.model.Transaction
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -38,6 +40,8 @@ fun ExpenseScreen(
     onBack: () -> Unit,
     onNavigateToAnalytics: () -> Unit,
     onNavigateToCategory: () -> Unit,
+    onNavigateToBudget: () -> Unit,
+    navController: NavController = rememberNavController(),
     viewModel: ExpenseViewModel = viewModel()
 ) {
     var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
@@ -57,6 +61,10 @@ fun ExpenseScreen(
                 title = { Text("Quản lý chi tiêu", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
+                    // Nút Ngân sách đã được sửa onClick
+                    IconButton(onClick = onNavigateToBudget) {
+                        Icon(Icons.Default.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary)
+                    }
                     IconButton(onClick = onNavigateToCategory) { Icon(Icons.Default.List, null, tint = MaterialTheme.colorScheme.primary) }
                     IconButton(onClick = onNavigateToAnalytics) { Icon(Icons.Default.Analytics, null, tint = MaterialTheme.colorScheme.primary) }
                 }
