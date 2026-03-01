@@ -1,7 +1,7 @@
 package com.personal.studentlifemanager
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
@@ -17,7 +17,7 @@ import com.personal.studentlifemanager.ui.screens.CategoryScreen
 import com.personal.studentlifemanager.ui.screens.ExpenseAnalyticsScreen
 import com.personal.studentlifemanager.ui.screens.RecurringScreen
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         actionBar?.hide()
