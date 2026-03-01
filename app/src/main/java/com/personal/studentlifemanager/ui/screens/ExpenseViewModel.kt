@@ -41,7 +41,8 @@ class ExpenseViewModel : ViewModel() {
     var selectedMonth by mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH))
     var selectedYear by mutableIntStateOf(Calendar.getInstance().get(Calendar.YEAR))
     var searchQuery by mutableStateOf("")
-    val supportedCurrencies = listOf("VND", "USD", "EUR", "JPY", "KRW")
+    var supportedCurrencies by mutableStateOf<List<String>>(listOf("VND", "USD", "EUR","JPN"))
+        private set
     var exchangeRates by mutableStateOf<Map<String, Double>>(emptyMap())
         private set
 
@@ -275,22 +276,35 @@ class ExpenseViewModel : ViewModel() {
     // --- KHU VỰC 8: XỬ LÝ ĐA TIỀN TỆ (MULTI-CURRENCY) ---
     // ==========================================
 
-    // 1. Gọi API Lấy tỷ giá Real-time (Lấy VND làm gốc)
+    // 1. Gọi API Lấy tỷ giá Real-time & TOÀN BỘ TIỀN TỆ TRÊN THẾ GIỚI
     private fun fetchExchangeRates() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val url = URL("https://open.er-api.com/v6/latest/VND")
-                val connection = url.openConnection() as HttpURLConnection
+                val url = java.net.URL("https://open.er-api.com/v6/latest/VND")
+                val connection = url.openConnection() as java.net.HttpURLConnection
                 connection.connect()
                 val response = connection.inputStream.bufferedReader().readText()
-                val json = JSONObject(response)
+                val json = org.json.JSONObject(response)
                 val rates = json.getJSONObject("rates")
 
                 val map = mutableMapOf<String, Double>()
-                supportedCurrencies.forEach { curr ->
-                    if (rates.has(curr)) map[curr] = rates.getDouble(curr)
+                val currencyList = mutableListOf<String>()
+
+                // Quét qua toàn bộ danh sách tiền tệ API trả về
+                rates.keys().forEach { curr ->
+                    currencyList.add(curr)
+                    map[curr] = rates.getDouble(curr)
                 }
-                withContext(Dispatchers.Main) { exchangeRates = map }
+
+                // Đẩy VND lên đầu, các tiền khác sắp xếp theo A-Z
+                val sortedList = currencyList.sorted().toMutableList()
+                sortedList.remove("VND")
+                sortedList.add(0, "VND")
+
+                withContext(Dispatchers.Main) {
+                    exchangeRates = map
+                    supportedCurrencies = sortedList // Nạp hơn 160 loại tiền vào Dropdown!
+                }
             } catch (e: Exception) { e.printStackTrace() }
         }
     }
