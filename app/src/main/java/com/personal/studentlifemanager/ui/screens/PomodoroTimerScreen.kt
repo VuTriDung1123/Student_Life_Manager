@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.content.Context
 import android.media.MediaPlayer
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -36,8 +38,6 @@ import com.personal.studentlifemanager.R
 import com.personal.studentlifemanager.data.model.PomodoroConfig
 import com.personal.studentlifemanager.data.model.PomodoroRecord
 import kotlinx.coroutines.delay
-import android.os.Vibrator
-import android.os.VibrationEffect
 
 enum class PomodoroPhase(val title: String) {
     FOCUS("TẬP TRUNG"),
@@ -48,7 +48,7 @@ enum class PomodoroPhase(val title: String) {
 @Composable
 fun PomodoroTimerScreen(
     config: PomodoroConfig,
-    taskName: String, // Đã thêm tham số nhận tên Task
+    taskName: String,
     pomodoroViewModel: PomodoroViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     onBack: () -> Unit
 ) {
@@ -62,15 +62,12 @@ fun PomodoroTimerScreen(
     var isRunning by remember { mutableStateOf(true) }
 
     var showExitDialog by remember { mutableStateOf(false) }
-    val startTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    // Ghi nhớ giờ bắt đầu của từng phiên Focus riêng biệt
+    var focusStartTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     var bgmSelection by remember { mutableIntStateOf(0) }
-    val bgmList = listOf(
-        Pair("Tắt nhạc", 0),
-        Pair("Mưa & Sấm chớp", R.raw.rain_thunderstorm),
-        Pair("Sóng biển", R.raw.sea_wave),
-        Pair("Rừng tuyết", R.raw.snow_falling_tree)
-    )
+    val bgmList = listOf(Pair("Tắt nhạc", 0), Pair("Mưa & Sấm chớp", R.raw.rain_thunderstorm), Pair("Sóng biển", R.raw.sea_wave), Pair("Rừng tuyết", R.raw.snow_falling_tree))
 
     var bgmPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var sfxPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -80,27 +77,20 @@ fun PomodoroTimerScreen(
         val insetsController = window?.let { WindowCompat.getInsetsController(it, view) }
         insetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         insetsController?.hide(WindowInsetsCompat.Type.navigationBars())
-
-        onDispose {
-            insetsController?.show(WindowInsetsCompat.Type.navigationBars())
-            bgmPlayer?.release()
-            sfxPlayer?.release()
-        }
-    }
-
-    fun playSfx(resId: Int) {
-        sfxPlayer?.release()
-        sfxPlayer = MediaPlayer.create(context, resId)
-        sfxPlayer?.start()
+        onDispose { insetsController?.show(WindowInsetsCompat.Type.navigationBars()); bgmPlayer?.release(); sfxPlayer?.release() }
     }
 
     fun vibratePhone() {
         val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
-        } else {
-            vibrator.vibrate(500)
-        }
+        } else { vibrator.vibrate(500) }
+    }
+
+    fun playSfx(resId: Int) {
+        sfxPlayer?.release()
+        sfxPlayer = MediaPlayer.create(context, resId)
+        sfxPlayer?.start()
     }
 
     LaunchedEffect(bgmSelection, isRunning, currentPhase) {
@@ -113,12 +103,13 @@ fun PomodoroTimerScreen(
         }
     }
 
+    // LƯU DB: Chỉ lưu cho phiên Focus (Break không cần lưu)
     fun saveSessionToDb(isSuccess: Boolean) {
         val endTime = System.currentTimeMillis()
-        val actualMinutes = ((endTime - startTime) / 60000).toInt()
+        val actualMinutes = ((endTime - focusStartTime) / 60000).toInt()
 
         val record = PomodoroRecord(
-            startTime = startTime,
+            startTime = focusStartTime,
             endTime = endTime,
             configFocus = config.focusTime,
             configShort = config.shortBreak,
@@ -126,7 +117,7 @@ fun PomodoroTimerScreen(
             configLong = config.longBreak,
             isCompleted = isSuccess,
             actualFocusMinutes = if (isSuccess) config.focusTime else actualMinutes,
-            taskName = taskName // Ghi nhận tên Task vào DB
+            taskName = taskName
         )
         pomodoroViewModel.saveRecord(record)
     }
@@ -136,7 +127,7 @@ fun PomodoroTimerScreen(
             if (event == Lifecycle.Event.ON_STOP) {
                 if (isRunning) {
                     isRunning = false
-                    saveSessionToDb(isSuccess = false)
+                    if (currentPhase == PomodoroPhase.FOCUS) saveSessionToDb(isSuccess = false)
                     sendAbortNotification(context)
                     onBack()
                 }
@@ -146,6 +137,7 @@ fun PomodoroTimerScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // LOGIC CHUYỂN PHA POMODORO (ĐÃ SỬA LONG BREAK)
     LaunchedEffect(isRunning, currentPhase) {
         while (isRunning && timeLeft > 0) {
             delay(1000)
@@ -153,34 +145,37 @@ fun PomodoroTimerScreen(
         }
 
         if (isRunning && timeLeft == 0L) {
-            vibratePhone() // 🔥 GỌI RUNG KHI HẾT GIỜ
-
+            vibratePhone()
             when (currentPhase) {
                 PomodoroPhase.FOCUS -> {
+                    // Xong 1 phiên Focus -> Lưu Thành Công vào DB ngay!
+                    saveSessionToDb(isSuccess = true)
+
                     if (currentSession < config.sessionsCount) {
                         currentPhase = PomodoroPhase.SHORT_BREAK
                         timeLeft = config.shortBreak * 60L
-                        playSfx(R.raw.japanese_school_bell)
-
-                        // 🔥 NẾU TẮT AUTO-START THÌ DỪNG LẠI CHỜ BẤM PLAY
-                        if (!config.autoStart) isRunning = false
                     } else {
-                        isRunning = false
-                        MediaPlayer.create(context.applicationContext, R.raw.ending_effect)?.start()
-                        saveSessionToDb(isSuccess = true)
-                        onBack()
+                        // Đủ N phiên -> CHUYỂN SANG LONG BREAK
+                        currentPhase = PomodoroPhase.LONG_BREAK
+                        timeLeft = config.longBreak * 60L
                     }
+                    playSfx(R.raw.japanese_school_bell)
+                    if (!config.autoStart) isRunning = false
                 }
                 PomodoroPhase.SHORT_BREAK -> {
                     currentSession++
                     currentPhase = PomodoroPhase.FOCUS
                     timeLeft = config.focusTime * 60L
+                    focusStartTime = System.currentTimeMillis() // Reset giờ bắt đầu
                     playSfx(R.raw.japanese_school_bell)
-
-                    // 🔥 NẾU TẮT AUTO-START THÌ DỪNG LẠI CHỜ BẤM PLAY
                     if (!config.autoStart) isRunning = false
                 }
-                PomodoroPhase.LONG_BREAK -> { }
+                PomodoroPhase.LONG_BREAK -> {
+                    // HẾT LONG BREAK -> HOÀN THÀNH TOÀN BỘ CHU TRÌNH
+                    isRunning = false
+                    MediaPlayer.create(context.applicationContext, R.raw.ending_effect)?.start()
+                    onBack() // Văng ra ngoài, đã lưu dữ liệu ở Focus trước đó rồi
+                }
             }
         }
     }
@@ -195,10 +190,7 @@ fun PomodoroTimerScreen(
         PomodoroPhase.LONG_BREAK -> Color(0xFFE3F2FD)
     }
 
-    Box(
-        modifier = Modifier.fillMaxSize().background(bgColor).padding(24.dp),
-        contentAlignment = Alignment.Center
-    ) {
+    Box(modifier = Modifier.fillMaxSize().background(bgColor).padding(24.dp), contentAlignment = Alignment.Center) {
         var expandedBgm by remember { mutableStateOf(false) }
         Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp)) {
             FilledTonalButton(onClick = { expandedBgm = true }, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFFE0E0E0))) {
@@ -207,9 +199,7 @@ fun PomodoroTimerScreen(
                 Text(bgmList[bgmSelection].first)
             }
             DropdownMenu(expanded = expandedBgm, onDismissRequest = { expandedBgm = false }) {
-                bgmList.forEachIndexed { index, pair ->
-                    DropdownMenuItem(text = { Text(pair.first) }, onClick = { bgmSelection = index; expandedBgm = false })
-                }
+                bgmList.forEachIndexed { index, pair -> DropdownMenuItem(text = { Text(pair.first) }, onClick = { bgmSelection = index; expandedBgm = false }) }
             }
         }
 
@@ -217,18 +207,8 @@ fun PomodoroTimerScreen(
             Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFFF1F8E9), modifier = Modifier.padding(bottom = 16.dp)) {
                 Text("PHIÊN $currentSession / ${config.sessionsCount} - ${currentPhase.title}", fontWeight = FontWeight.Bold, color = Color(0xFF388E3C), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             }
-
-            // 🔥 HIỂN THỊ MỤC TIÊU CÔNG VIỆC
-            Text(
-                text = "Mục tiêu: $taskName",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.Gray,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-
+            Text(text = "Mục tiêu: $taskName", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = Color.Gray, modifier = Modifier.padding(bottom = 16.dp))
             Text(timeString, fontSize = 90.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onBackground)
-
             Spacer(modifier = Modifier.height(100.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -238,45 +218,45 @@ fun PomodoroTimerScreen(
                         showExitDialog = true
                     },
                     modifier = Modifier.size(64.dp).background(Color(0xFFEEEEEE), RoundedCornerShape(16.dp))
-                ) {
-                    Icon(Icons.Default.Stop, contentDescription = "Dừng", tint = Color(0xFFF44336), modifier = Modifier.size(32.dp))
-                }
+                ) { Icon(Icons.Default.Stop, contentDescription = "Dừng", tint = Color(0xFFF44336), modifier = Modifier.size(32.dp)) }
 
                 Spacer(modifier = Modifier.width(32.dp))
 
                 IconButton(
                     onClick = { isRunning = !isRunning },
                     modifier = Modifier.size(80.dp).background(Color(0xFF212121), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = "Tạm dừng", tint = Color.White, modifier = Modifier.size(40.dp)
-                    )
-                }
+                ) { Icon(imageVector = if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Tạm dừng", tint = Color.White, modifier = Modifier.size(40.dp)) }
             }
         }
     }
 
+    // 🔥 DIALOG KHI BẤM NÚT STOP (CÓ THÊM NÚT HỦY KHÔNG LƯU)
     if (showExitDialog) {
         AlertDialog(
-            onDismissRequest = {
-                showExitDialog = false
-                isRunning = true
-            },
+            onDismissRequest = { showExitDialog = false; isRunning = true },
             title = { Text("Dừng Pomodoro?", fontWeight = FontWeight.Bold) },
-            text = { Text("Bạn có chắc chắn muốn bỏ cuộc giữa chừng không? Lịch sử sẽ ghi nhận đây là một phiên thất bại.") },
+            text = { Text("Bạn muốn làm gì với phiên này?") },
             confirmButton = {
                 Button(
                     onClick = {
                         showExitDialog = false
-                        saveSessionToDb(isSuccess = false)
+                        // Chỉ lưu Thất bại nếu đang ở pha Tập Trung
+                        if (currentPhase == PomodoroPhase.FOCUS) saveSessionToDb(isSuccess = false)
                         onBack()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))
-                ) { Text("Chắc chắn dừng", color = Color.White) }
+                ) { Text("Bỏ cuộc (Lưu thất bại)", color = Color.White, fontSize = 12.sp) }
             },
             dismissButton = {
-                TextButton(onClick = { showExitDialog = false; isRunning = true }) { Text("Tiếp tục tập trung", color = MaterialTheme.colorScheme.primary) }
+                Row {
+                    // 🔥 NÚT RESET: THOÁT RA MÀ KHÔNG LƯU GÌ CẢ
+                    TextButton(onClick = { showExitDialog = false; onBack() }) {
+                        Text("Hủy (Không lưu)", color = Color.Gray, fontSize = 12.sp)
+                    }
+                    TextButton(onClick = { showExitDialog = false; isRunning = true }) {
+                        Text("Tiếp tục", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                    }
+                }
             }
         )
     }

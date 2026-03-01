@@ -88,10 +88,14 @@ fun PomodoroScreen(
         ) {
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 🔥 1. CHUYỂN NGÀY VÀ TỔNG KẾT TUẦN
+            // 🔥 1. CHUYỂN NGÀY VÀ TỔNG KẾT TUẦN & STREAK
             val dateStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(pomodoroViewModel.selectedDate.time)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Tuần này: ${pomodoroViewModel.weeklyTotalMinutes} phút", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                // Hiển thị Tuần này và Streak
+                Column {
+                    Text("Tuần này: ${pomodoroViewModel.weeklyTotalMinutes} phút", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("🔥 Chuỗi: ${pomodoroViewModel.currentStreak} ngày", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5722))
+                }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { pomodoroViewModel.changeDate(-1) }) { Icon(Icons.Default.ChevronLeft, "Hôm trước") }
@@ -179,8 +183,27 @@ fun PomodoroScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 🔥 4. DANH SÁCH LỊCH SỬ CHI TIẾT
-            Text("Lịch sử phiên", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+            // 🔥 THỐNG KÊ CƠ BẢN CỦA NGÀY
+            val totalCompleted = currentDateRecords.count { it.isCompleted }
+            val totalMinutes = currentDateRecords.filter { it.isCompleted }.sumOf { it.actualFocusMinutes }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Text("Lịch sử phiên", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                // Hiển thị chữ màu xanh: "2 phiên • 50 phút"
+                Text(
+                    text = "$totalCompleted phiên • $totalMinutes phút",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
