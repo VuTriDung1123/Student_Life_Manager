@@ -1,9 +1,6 @@
 package com.personal.studentlifemanager.ui.screens
 
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import com.personal.studentlifemanager.data.model.Category
 import com.personal.studentlifemanager.data.model.Transaction
@@ -15,44 +12,28 @@ class ExpenseViewModel : ViewModel() {
 
     var transactions by mutableStateOf<List<Transaction>>(emptyList())
         private set
-
     var categories by mutableStateOf<List<Category>>(emptyList())
         private set
 
-    // --- 🕒 THÊM BỘ LỌC THÁNG / NĂM ---
-    var selectedMonth by mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH)) // 0 đến 11
+    // --- 🔍 TÌM KIẾM & BỘ LỌC ---
+    var selectedMonth by mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH))
     var selectedYear by mutableIntStateOf(Calendar.getInstance().get(Calendar.YEAR))
-    val allTransactions: List<Transaction> get() = transactions
-    // Dữ liệu "thực" sẽ đưa ra màn hình (Chỉ lấy giao dịch thuộc tháng/năm đang chọn)
+    var searchQuery by mutableStateOf("") // Lưu từ khóa tìm kiếm
+
+    // Danh sách "xịn" đã qua lọc và tìm kiếm để đưa ra màn hình
     val filteredTransactions: List<Transaction>
-        get() = transactions.filter {
-            val cal = Calendar.getInstance().apply { timeInMillis = it.date }
-            cal.get(Calendar.MONTH) == selectedMonth && cal.get(Calendar.YEAR) == selectedYear
-        }
+        get() = transactions.filter { t ->
+            val cal = Calendar.getInstance().apply { timeInMillis = t.date }
+            val matchesDate = cal.get(Calendar.MONTH) == selectedMonth && cal.get(Calendar.YEAR) == selectedYear
+            val matchesSearch = t.note.contains(searchQuery, ignoreCase = true)
+            matchesDate && matchesSearch
+        }.sortedByDescending { it.date } // Luôn để cái mới nhất lên đầu
 
-    // Hàm lùi tháng
-    fun previousMonth() {
-        if (selectedMonth == 0) {
-            selectedMonth = 11
-            selectedYear -= 1
-        } else {
-            selectedMonth -= 1
-        }
-    }
-
-    // Hàm tiến tháng
-    fun nextMonth() {
-        if (selectedMonth == 11) {
-            selectedMonth = 0
-            selectedYear += 1
-        } else {
-            selectedMonth += 1
-        }
-    }
-    // ------------------------------------
+    // Để trang Analytics lấy hết data
+    val allTransactions: List<Transaction> get() = transactions
 
     init {
-        repository.getTransactions { list -> transactions = list }
+        repository.getTransactions { transactions = it }
         repository.getCategories { list ->
             if (list.isEmpty()) seedDefaultCategories() else categories = list
         }
@@ -68,21 +49,28 @@ class ExpenseViewModel : ViewModel() {
         defaults.forEach { repository.addCategory(it) {} }
     }
 
-    fun addTransaction(amount: Double, note: String, categoryId: String, isIncome: Boolean, onSuccess: () -> Unit) {
-        val transaction = Transaction("", amount, note, System.currentTimeMillis(), categoryId, isIncome)
-        repository.addTransaction(transaction, onSuccess = { onSuccess() }, onFailure = {})
+    // --- CÁC HÀM XỬ LÝ DỮ LIỆU ---
+    fun addTransaction(transaction: Transaction, onSuccess: () -> Unit) {
+        repository.addTransaction(transaction, onSuccess, {})
+    }
+
+    fun updateTransaction(transaction: Transaction, onSuccess: () -> Unit) {
+        repository.updateTransaction(transaction, onSuccess)
     }
 
     fun deleteTransaction(transactionId: String) {
-        repository.deleteTransaction(transactionId, onSuccess = {}, onFailure = {})
+        repository.deleteTransaction(transactionId, {}, {})
+    }
+
+    fun previousMonth() { /* Code cũ của bạn */
+        if (selectedMonth == 0) { selectedMonth = 11; selectedYear -= 1 } else selectedMonth -= 1
+    }
+    fun nextMonth() { /* Code cũ của bạn */
+        if (selectedMonth == 11) { selectedMonth = 0; selectedYear += 1 } else selectedMonth += 1
     }
 
     fun addCategory(name: String, colorHex: String, isIncome: Boolean, onSuccess: () -> Unit) {
-        val newCat = Category("", name, "Default", colorHex, isIncome)
-        repository.addCategory(newCat, onSuccess)
+        repository.addCategory(Category("", name, "Default", colorHex, isIncome), onSuccess)
     }
-
-    fun deleteCategory(categoryId: String) {
-        repository.deleteCategory(categoryId)
-    }
+    fun deleteCategory(categoryId: String) = repository.deleteCategory(categoryId)
 }
