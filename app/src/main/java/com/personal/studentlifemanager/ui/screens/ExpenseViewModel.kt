@@ -22,7 +22,7 @@ class ExpenseViewModel : ViewModel() {
     // --- 🕒 THÊM BỘ LỌC THÁNG / NĂM ---
     var selectedMonth by mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH)) // 0 đến 11
     var selectedYear by mutableIntStateOf(Calendar.getInstance().get(Calendar.YEAR))
-
+    val allTransactions: List<Transaction> get() = transactions
     // Dữ liệu "thực" sẽ đưa ra màn hình (Chỉ lấy giao dịch thuộc tháng/năm đang chọn)
     val filteredTransactions: List<Transaction>
         get() = transactions.filter {
