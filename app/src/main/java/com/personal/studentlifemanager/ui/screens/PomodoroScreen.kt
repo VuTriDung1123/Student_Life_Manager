@@ -159,7 +159,7 @@ fun ConfigInputField(label: String, value: String, onValueChange: (String) -> Un
 @Composable
 fun PomodoroScreen(
     onBack: () -> Unit,
-    onNavigateToTimer: () -> Unit
+    onNavigateToTimer: (PomodoroConfig) -> Unit
 ) {
     var config by remember { mutableStateOf(PomodoroConfig(25, 5, 4, 15)) }
 
@@ -217,7 +217,7 @@ fun PomodoroScreen(
                         }
 
                         Button(
-                            onClick = onNavigateToTimer,
+                            onClick = { onNavigateToTimer(config) },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.height(50.dp).width(120.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57C00))

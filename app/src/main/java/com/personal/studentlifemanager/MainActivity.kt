@@ -24,10 +24,13 @@ import com.personal.studentlifemanager.ui.screens.LoginScreen
 import com.personal.studentlifemanager.ui.screens.CategoryScreen
 import com.personal.studentlifemanager.ui.screens.ExpenseAnalyticsScreen
 import com.personal.studentlifemanager.ui.screens.PomodoroScreen
+import com.personal.studentlifemanager.ui.screens.PomodoroTimerScreen
 import com.personal.studentlifemanager.ui.screens.RecurringScreen
 import com.personal.studentlifemanager.worker.ReminderWorker // 🔥 IMPORT ĐÚNG THƯ MỤC CỦA BẠN
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 
 class MainActivity : FragmentActivity() {
 
@@ -107,9 +110,39 @@ class MainActivity : FragmentActivity() {
                     composable("pomodoro") {
                         PomodoroScreen(
                             onBack = { navController.popBackStack() },
-                            onNavigateToTimer = {
-                                // Tạm thời để trống, lát nữa mình tạo màn hình Đếm ngược rồi gọi sau
+                            onNavigateToTimer = { config ->
+                                navController.navigate("pomodoro_timer/${config.focusTime}/${config.shortBreak}/${config.sessionsCount}/${config.longBreak}")
                             }
+                        )
+                    }
+
+                    // 🔥 BẮT DATA Ở MÀN HÌNH ĐẾM NGƯỢC
+                    composable(
+                        route = "pomodoro_timer/{focus}/{short}/{sessions}/{long}",
+                        arguments = listOf(
+                            navArgument("focus") { type = NavType.IntType },
+                            navArgument("short") { type = NavType.IntType },
+                            navArgument("sessions") { type = NavType.IntType },
+                            navArgument("long") { type = NavType.IntType }
+                        )
+                    ) { backStackEntry ->
+                        // Rút 4 con số từ URL ra
+                        val focus = backStackEntry.arguments?.getInt("focus") ?: 25
+                        val short = backStackEntry.arguments?.getInt("short") ?: 5
+                        val sessions = backStackEntry.arguments?.getInt("sessions") ?: 4
+                        val long = backStackEntry.arguments?.getInt("long") ?: 15
+
+                        PomodoroTimerScreen(
+                            // Bơm cấu hình mới vào đồng hồ
+                            config = com.personal.studentlifemanager.data.model.PomodoroConfig(focus, short, sessions, long),
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable("pomodoro_timer") {
+                        PomodoroTimerScreen(
+                            config = com.personal.studentlifemanager.data.model.PomodoroConfig(25, 5, 4, 15),
+                            onBack = { navController.popBackStack() }
                         )
                     }
 
