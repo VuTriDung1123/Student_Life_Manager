@@ -104,4 +104,12 @@ class ExpenseViewModel : ViewModel() {
     }
 
     fun deleteBudget(budgetId: String) = repository.deleteBudget(budgetId)
+
+    // --- HÀM TÍNH XU HƯỚNG BÁO CÁO (TRẬN 3) ---
+    fun getExpenseForMonth(month: Int, year: Int): Double {
+        return allTransactions.filter { t ->
+            val cal = Calendar.getInstance().apply { timeInMillis = t.date }
+            cal.get(Calendar.MONTH) == month && cal.get(Calendar.YEAR) == year && !t.isIncome && !t.isTransfer
+        }.sumOf { it.amount }
+    }
 }

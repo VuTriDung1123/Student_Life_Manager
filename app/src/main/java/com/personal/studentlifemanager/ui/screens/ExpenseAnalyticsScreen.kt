@@ -9,11 +9,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -29,14 +33,13 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpenseAnalyticsScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = viewModel()) {
-    val allTransactions: List<Transaction> = viewModel.allTransactions
+    val allTransactions = viewModel.allTransactions
     val categories = viewModel.categories
     val formatter = NumberFormat.getCurrencyInstance(Locale("vi", "VN"))
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     val tabs = listOf("Tháng này", "Năm này", "Tổng")
 
-    // Lọc dữ liệu dựa trên Tab
     val filteredData = remember(selectedTabIndex, allTransactions) {
         val now = Calendar.getInstance()
         when (selectedTabIndex) {
@@ -52,16 +55,32 @@ fun ExpenseAnalyticsScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = vie
         }
     }
 
-    val totalIncome = filteredData.filter { it.isIncome }.sumOf { it.amount }
-    val totalExpense = filteredData.filter { !it.isIncome }.sumOf { it.amount }
+    val totalIncome = filteredData.filter { it.isIncome && !it.isTransfer }.sumOf { it.amount }
+    val totalExpense = filteredData.filter { !it.isIncome && !it.isTransfer }.sumOf { it.amount }
     val balance = totalIncome - totalExpense
     val totalFlow = totalIncome + totalExpense
 
+    // --- TÍNH TOÁN SO SÁNH THÁNG TRƯỚC (NEW) ---
+    var prevMonth = viewModel.selectedMonth - 1
+    var prevYear = viewModel.selectedYear
+    if (prevMonth < 0) { prevMonth = 11; prevYear -= 1 }
+    val lastMonthExpense = viewModel.getExpenseForMonth(prevMonth, prevYear)
+    val diffExpense = totalExpense - lastMonthExpense
+    val diffPercent = if (lastMonthExpense > 0) (diffExpense / lastMonthExpense) * 100 else 0.0
+
+    // --- DỮ LIỆU BIỂU ĐỒ CỘT 6 THÁNG (NEW) ---
+    val trendData = (5 downTo 0).map { offset ->
+        var m = viewModel.selectedMonth - offset
+        var y = viewModel.selectedYear
+        if (m < 0) { m += 12; y -= 1 }
+        Pair("T${m + 1}", viewModel.getExpenseForMonth(m, y))
+    }
+    val maxTrendExpense = trendData.maxOfOrNull { it.second }?.takeIf { it > 0 } ?: 1.0
+
     var showIncomeDetail by remember { mutableStateOf(false) }
 
-    // Dữ liệu cho Biểu đồ cơ cấu danh mục - Ép kiểu rõ ràng để tránh lỗi "it"
     val chartData: List<Pair<String, Double>> = filteredData
-        .filter { it.isIncome == showIncomeDetail }
+        .filter { it.isIncome == showIncomeDetail && !it.isTransfer }
         .groupBy { it.categoryId }
         .mapValues { entry -> entry.value.sumOf { it.amount } }
         .toList()
@@ -73,67 +92,86 @@ fun ExpenseAnalyticsScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = vie
         topBar = {
             TopAppBar(
                 title = { Text("Báo cáo tài chính", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Quay lại")
-                    }
-                }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Quay lại") } }
             )
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
             TabRow(selectedTabIndex = selectedTabIndex) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTabIndex == index,
-                        onClick = { selectedTabIndex = index },
-                        text = { Text(title) }
-                    )
-                }
+                tabs.forEachIndexed { index, title -> Tab(selected = selectedTabIndex == index, onClick = { selectedTabIndex = index }, text = { Text(title) }) }
             }
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 24.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                        shape = RoundedCornerShape(20.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(20.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Column {
-                                    Text("Tổng Thu", style = MaterialTheme.typography.labelMedium)
-                                    Text(formatter.format(totalIncome), fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50), fontSize = 18.sp)
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+
+                // --- 1. SO SÁNH THÁNG TRƯỚC (HIỆN KHI Ở TAB "THÁNG NÀY") ---
+                if (selectedTabIndex == 0) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                            colors = CardDefaults.cardColors(containerColor = if (diffExpense > 0) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(40.dp).background(if (diffExpense > 0) Color(0xFFF44336) else Color(0xFF4CAF50), CircleShape), contentAlignment = Alignment.Center) {
+                                    Icon(if (diffExpense > 0) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null, tint = Color.White)
                                 }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text("Tổng Chi", style = MaterialTheme.typography.labelMedium)
-                                    Text(formatter.format(totalExpense), fontWeight = FontWeight.Bold, color = Color(0xFFF44336), fontSize = 18.sp)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column {
+                                    Text(if (diffExpense > 0) "Tiêu nhiều hơn tháng trước" else "Tiết kiệm hơn tháng trước", fontWeight = FontWeight.Bold)
+                                    Text("${formatter.format(Math.abs(diffExpense))} (${String.format("%.1f", Math.abs(diffPercent))}%)", color = if (diffExpense > 0) Color(0xFFF44336) else Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
                                 }
                             }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            HorizontalDivider(modifier = Modifier.alpha(0.3f)) // Sửa Divider -> HorizontalDivider
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("Số dư thực tế:", style = MaterialTheme.typography.labelMedium)
-                            Text(formatter.format(balance), fontWeight = FontWeight.ExtraBold, fontSize = 24.sp)
                         }
                     }
                 }
 
+                // --- 2. BIỂU ĐỒ XU HƯỚNG CHI TIÊU 6 THÁNG (BAR CHART) ---
                 item {
-                    Text("Tỷ lệ Thu / Chi (Dòng tiền)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text("Xu hướng 6 tháng gần nhất", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    val currentExpense = viewModel.getExpenseForMonth(viewModel.selectedMonth, viewModel.selectedYear)
+
+                    // 🔥 SỬA Ở ĐÂY: Rút cái màu (Composable) ra ngoài Canvas
+                    val primaryColor = MaterialTheme.colorScheme.primary
+
+                    Box(modifier = Modifier.fillMaxWidth().height(160.dp).padding(bottom = 8.dp)) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val barWidth = size.width / (trendData.size * 2)
+                            var xOffset = barWidth / 2
+
+                            trendData.forEach { (label, amount) ->
+                                val barHeight = (amount / maxTrendExpense).toFloat() * size.height
+
+                                // Gọi biến màu đã rút ra ở trên
+                                drawRoundRect(
+                                    color = primaryColor.copy(alpha = if (amount == currentExpense) 1f else 0.5f),
+                                    topLeft = Offset(xOffset, size.height - barHeight),
+                                    size = Size(barWidth, barHeight),
+                                    cornerRadius = CornerRadius(8f, 8f)
+                                )
+                                xOffset += barWidth * 2
+                            }
+                        }
+                    }
+                    // Chú thích tháng dưới biểu đồ
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        trendData.forEach { (label, _) ->
+                            Text(label, style = MaterialTheme.typography.bodySmall, color = Color.Gray, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        }
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
+                }
+
+                // --- 3. TỶ LỆ DÒNG TIỀN (DONUT CHART GỐC) ---
+                item {
+                    Text("Tỷ lệ dòng tiền", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(16.dp))
                     if (totalFlow == 0.0) {
-                        Text("Không có dữ liệu dòng tiền.", color = Color.Gray, modifier = Modifier.padding(bottom = 24.dp))
+                        Text("Không có dữ liệu.", color = Color.Gray, modifier = Modifier.padding(bottom = 24.dp))
                     } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly) {
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(130.dp)) {
                                 Canvas(modifier = Modifier.size(100.dp)) {
                                     val incomeSweep = (totalIncome / totalFlow).toFloat() * 360f
@@ -152,8 +190,9 @@ fun ExpenseAnalyticsScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = vie
                     HorizontalDivider(modifier = Modifier.padding(bottom = 24.dp))
                 }
 
+                // --- 4. TOP DANH MỤC CHI TIÊU ---
                 item {
-                    Text("Cơ cấu danh mục", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+                    Text("Phân tích chi tiết", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
                     Row(modifier = Modifier.padding(vertical = 16.dp)) {
                         FilterChip(selected = !showIncomeDetail, onClick = { showIncomeDetail = false }, label = { Text("Chi tiêu") })
                         Spacer(modifier = Modifier.width(12.dp))
@@ -161,6 +200,7 @@ fun ExpenseAnalyticsScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = vie
                     }
                 }
 
+                // Biểu đồ danh mục (Giữ nguyên)
                 item {
                     if (chartTotal > 0) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(200.dp).padding(bottom = 16.dp)) {
@@ -168,9 +208,8 @@ fun ExpenseAnalyticsScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = vie
                                 var start = -90f
                                 chartData.forEach { dataPair ->
                                     val catId = dataPair.first
-                                    val amt = dataPair.second
                                     val category = categories.find { it.id == catId }
-                                    val sweep = (amt / chartTotal).toFloat() * 360f
+                                    val sweep = (dataPair.second / chartTotal).toFloat() * 360f
                                     val color = try { Color(android.graphics.Color.parseColor(category?.colorHex ?: "#CCCCCC")) } catch (e: Exception) { Color.LightGray }
                                     drawArc(color, start, sweep, false, style = Stroke(50f))
                                     start += sweep
@@ -181,22 +220,34 @@ fun ExpenseAnalyticsScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = vie
                     }
                 }
 
-                items(chartData) { dataPair ->
-                    val catId = dataPair.first
-                    val amt = dataPair.second
-                    val category = categories.find { it.id == catId }
+                // Danh sách top danh mục (Có ghim 🥇🥈🥉 cho Top 3)
+                items(chartData.withIndex().toList()) { (index, dataPair) ->
+                    val category = categories.find { it.id == dataPair.first }
+                    val medal = when(index) {
+                        0 -> "🥇"
+                        1 -> "🥈"
+                        2 -> "🥉"
+                        else -> ""
+                    }
+
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.size(12.dp).background(
+                        Box(modifier = Modifier.size(16.dp).background(
                             try { Color(android.graphics.Color.parseColor(category?.colorHex ?: "#CCCCCC")) } catch (e: Exception) { Color.Gray }, CircleShape
                         ))
-                        Text(category?.name ?: "Khác", modifier = Modifier.padding(start = 8.dp).weight(1f))
-                        Text(formatter.format(amt), fontWeight = FontWeight.Bold)
+                        Text("${category?.name ?: "Khác"} $medal", modifier = Modifier.padding(start = 12.dp).weight(1f), fontWeight = if (index < 3) FontWeight.Bold else FontWeight.Normal)
+                        Text(formatter.format(dataPair.second), fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
     }
 }
+
+//// Helper function để lấy tiền tháng hiện tại tô đậm cột Bar Chart
+//@Composable
+//fun currentMonthExpense(viewModel: ExpenseViewModel): Double {
+//    return viewModel.getExpenseForMonth(viewModel.selectedMonth, viewModel.selectedYear)
+//}
 
 @Composable
 fun LegendItem(color: Color, label: String, percent: Double) {
