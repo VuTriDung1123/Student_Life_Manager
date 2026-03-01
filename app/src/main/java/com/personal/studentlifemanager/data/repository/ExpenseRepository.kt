@@ -4,6 +4,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.Query
+import com.personal.studentlifemanager.data.model.Budget
 import com.personal.studentlifemanager.data.model.Category
 import com.personal.studentlifemanager.data.model.Transaction
 import com.personal.studentlifemanager.data.model.Wallet
@@ -128,5 +129,36 @@ class ExpenseRepository {
 
     fun deleteWallet(walletId: String) {
         walletRef.document(walletId).delete()
+    }
+
+    // ==========================================
+    // --- KHU VỰC 4: NGÂN SÁCH (BUDGETS) ---
+    // ==========================================
+    private val budgetRef get() = firestore
+        .collection("users")
+        .document(userId)
+        .collection("budgets")
+
+    fun getBudgets(onResult: (List<Budget>) -> Unit) {
+        budgetRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                onResult(emptyList())
+                return@addSnapshotListener
+            }
+            val list = snapshot?.documents?.mapNotNull { doc ->
+                doc.toObject(Budget::class.java)?.apply { id = doc.id }
+            } ?: emptyList()
+            onResult(list)
+        }
+    }
+
+    fun saveBudget(budget: Budget, onSuccess: () -> Unit) {
+        val docRef = if (budget.id.isEmpty()) budgetRef.document() else budgetRef.document(budget.id)
+        val budgetToSave = budget.copy(id = docRef.id)
+        docRef.set(budgetToSave).addOnSuccessListener { onSuccess() }
+    }
+
+    fun deleteBudget(budgetId: String) {
+        budgetRef.document(budgetId).delete()
     }
 }

@@ -9,6 +9,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
+import com.personal.studentlifemanager.ui.screens.BudgetScreen
 import com.personal.studentlifemanager.ui.screens.ExpenseScreen
 import com.personal.studentlifemanager.ui.screens.HomeScreen
 import com.personal.studentlifemanager.ui.screens.LoginScreen
@@ -59,8 +60,10 @@ class MainActivity : ComponentActivity() {
                     composable("expense") {
                         ExpenseScreen(
                             onBack = { navController.popBackStack() },
-                            onNavigateToAnalytics = { navController.navigate("expense_analytics") }, // Nút biểu đồ
-                            onNavigateToCategory = { navController.navigate("category_manage") }     // Nút danh sách (cái bạn vừa bấm)
+                            onNavigateToAnalytics = { navController.navigate("expense_analytics") },
+                            onNavigateToCategory = { navController.navigate("category_manage") },
+                            onNavigateToBudget = { navController.navigate("budget")},
+
                         )
                     }
 
@@ -77,6 +80,12 @@ class MainActivity : ComponentActivity() {
                             onBack = { navController.popBackStack() }
                         )
                     }
+
+                    // Màn hình Ngân Sách
+                    composable("budget") {
+                        BudgetScreen(onBack = { navController.popBackStack() })
+                    }
+
                 }
             }
         }

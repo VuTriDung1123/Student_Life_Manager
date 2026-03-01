@@ -35,3 +35,12 @@ data class Transaction(
     var isTransfer: Boolean = false,
     var toWalletId: String = "" // ID của ví nhận tiền (nếu là giao dịch chuyển tiền)
 )
+
+// --- THÊM CLASS NGÂN SÁCH MỚI ---
+data class Budget(
+    var id: String = "",
+    var categoryId: String = "", // Ngân sách cho danh mục nào
+    var amountLimit: Double = 0.0, // Giới hạn bao nhiêu tiền
+    var month: Int = 0, // Áp dụng cho tháng nào
+    var year: Int = 0 // Áp dụng cho năm nào
+)
