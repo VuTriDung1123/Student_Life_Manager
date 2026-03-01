@@ -6,6 +6,7 @@ import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.Query
 import com.personal.studentlifemanager.data.model.Category
 import com.personal.studentlifemanager.data.model.Transaction
+import com.personal.studentlifemanager.data.model.Wallet
 
 class ExpenseRepository {
     private val firestore = FirebaseFirestore.getInstance()
@@ -96,5 +97,36 @@ class ExpenseRepository {
         // Dùng đúng ID của nó để ghi đè dữ liệu mới lên
         transactionRef.document(transaction.id).set(transaction)
             .addOnSuccessListener { onSuccess() }
+    }
+
+    // ==========================================
+    // --- KHU VỰC 3: VÍ TIỀN (WALLETS) ---
+    // ==========================================
+    private val walletRef get() = firestore
+        .collection("users")
+        .document(userId)
+        .collection("wallets")
+
+    fun getWallets(onResult: (List<Wallet>) -> Unit) {
+        walletRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                onResult(emptyList())
+                return@addSnapshotListener
+            }
+            val list = snapshot?.documents?.mapNotNull { doc ->
+                doc.toObject(Wallet::class.java)?.apply { id = doc.id }
+            } ?: emptyList()
+            onResult(list)
+        }
+    }
+
+    fun addWallet(wallet: Wallet, onSuccess: () -> Unit) {
+        val docRef = walletRef.document()
+        val walletWithId = wallet.apply { id = docRef.id }
+        docRef.set(walletWithId).addOnSuccessListener { onSuccess() }
+    }
+
+    fun deleteWallet(walletId: String) {
+        walletRef.document(walletId).delete()
     }
 }

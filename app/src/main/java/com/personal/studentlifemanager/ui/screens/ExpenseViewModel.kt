@@ -4,6 +4,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import com.personal.studentlifemanager.data.model.Category
 import com.personal.studentlifemanager.data.model.Transaction
+import com.personal.studentlifemanager.data.model.Wallet
 import com.personal.studentlifemanager.data.repository.ExpenseRepository
 import java.util.Calendar
 
@@ -49,9 +50,34 @@ class ExpenseViewModel : ViewModel() {
         defaults.forEach { repository.addCategory(it) {} }
     }
 
+    // 🔥 THÊM BIẾN LƯU VÍ
+    var wallets by mutableStateOf<List<Wallet>>(emptyList())
+        private set
+
+    init {
+        repository.getTransactions { transactions = it }
+        repository.getCategories { list ->
+            if (list.isEmpty()) seedDefaultCategories() else categories = list
+        }
+        // 🔥 LẮNG NGHE DỮ LIỆU VÍ TỪ FIREBASE
+        repository.getWallets { list ->
+            if (list.isEmpty()) seedDefaultWallets() else wallets = list
+        }
+    }
+
+    // Tự động tạo ví mặc định cho tài khoản mới
+    private fun seedDefaultWallets() {
+        val defaults = listOf(
+            Wallet("", "Tiền mặt", "#4CAF50"),      // Xanh lá
+            Wallet("", "Tài khoản NH / Momo", "#2196F3") // Xanh dương
+        )
+        defaults.forEach { repository.addWallet(it) {} }
+    }
+
     // --- CÁC HÀM XỬ LÝ DỮ LIỆU ---
-    fun addTransaction(transaction: Transaction, onSuccess: () -> Unit) {
-        repository.addTransaction(transaction, onSuccess, {})
+    fun addTransaction(amount: Double, note: String, categoryId: String, walletId: String, isIncome: Boolean, onSuccess: () -> Unit) {
+        val transaction = Transaction("", amount, note, System.currentTimeMillis(), categoryId, isIncome, walletId)
+        repository.addTransaction(transaction, onSuccess = { onSuccess() }, onFailure = {})
     }
 
     fun updateTransaction(transaction: Transaction, onSuccess: () -> Unit) {

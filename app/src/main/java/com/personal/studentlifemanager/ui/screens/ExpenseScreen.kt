@@ -1,6 +1,7 @@
 package com.personal.studentlifemanager.ui.screens
 
 import android.app.DatePickerDialog
+import android.widget.DatePicker
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -140,27 +141,76 @@ fun TransactionItem(transaction: Transaction, viewModel: ExpenseViewModel, forma
 
 @Composable
 fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transaction?, onSaved: () -> Unit) {
-    // KHỞI TẠO GIÁ TRỊ TỪ GIAO DỊCH ĐANG SỬA (NẾU CÓ)
-    var amount by remember { mutableStateOf(editingTransaction?.amount?.toLong()?.toString() ?: "") }
+    var amount by remember { mutableStateOf(if (editingTransaction != null) String.format(Locale.US, "%.0f", editingTransaction.amount) else "") }
     var note by remember { mutableStateOf(editingTransaction?.note ?: "") }
     var isIncome by remember { mutableStateOf(editingTransaction?.isIncome ?: false) }
+
     val availableCategories = viewModel.categories.filter { it.isIncome == isIncome }
-    var selectedCategory by remember(isIncome) {
+    var selectedCategory by remember(isIncome, availableCategories) {
         mutableStateOf(availableCategories.find { it.id == editingTransaction?.categoryId } ?: availableCategories.firstOrNull())
+    }
+
+    // 🔥 XỬ LÝ CHỌN VÍ TIỀN
+    val wallets = viewModel.wallets
+    var selectedWallet by remember(wallets) {
+        mutableStateOf(wallets.find { it.id == editingTransaction?.walletId } ?: wallets.firstOrNull())
     }
 
     val context = LocalContext.current
     var selectedDateMillis by remember { mutableStateOf(editingTransaction?.date ?: System.currentTimeMillis()) }
+    val dateString = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDateMillis)
+
+    val datePickerDialog = DatePickerDialog(
+        context,
+        { _: DatePicker, year: Int, month: Int, dayOfMonth: Int ->
+            val newCalendar = Calendar.getInstance()
+            newCalendar.set(year, month, dayOfMonth)
+            selectedDateMillis = newCalendar.timeInMillis
+        },
+        Calendar.getInstance().apply { timeInMillis = selectedDateMillis }.get(Calendar.YEAR),
+        Calendar.getInstance().apply { timeInMillis = selectedDateMillis }.get(Calendar.MONTH),
+        Calendar.getInstance().apply { timeInMillis = selectedDateMillis }.get(Calendar.DAY_OF_MONTH)
+    )
 
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(if (editingTransaction == null) "Thêm giao dịch" else "Sửa giao dịch", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
         Row(modifier = Modifier.padding(vertical = 16.dp)) {
-            FilterChip(selected = !isIncome, onClick = { isIncome = false }, label = { Text("Chi tiêu") })
+            FilterChip(selected = !isIncome, onClick = { isIncome = false }, label = { Text("Chi tiêu") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFFFCDD2)))
             Spacer(modifier = Modifier.width(8.dp))
-            FilterChip(selected = isIncome, onClick = { isIncome = true }, label = { Text("Thu nhập") })
+            FilterChip(selected = isIncome, onClick = { isIncome = true }, label = { Text("Thu nhập") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFC8E6C9)))
         }
 
+        // --- CHỌN VÍ TIỀN (MỚI) ---
+        Text("Nguồn tiền (Ví):", style = MaterialTheme.typography.labelMedium, modifier = Modifier.align(Alignment.Start).padding(start = 4.dp))
+        LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(wallets) { wallet ->
+                FilterChip(
+                    selected = selectedWallet?.id == wallet.id,
+                    onClick = { selectedWallet = wallet },
+                    label = { Text(wallet.name) },
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = try { Color(android.graphics.Color.parseColor(wallet.colorHex)).copy(alpha = 0.5f) } catch (e: Exception) { Color.LightGray })
+                )
+            }
+        }
+
+        // --- CHỌN DANH MỤC ---
+        Text("Danh mục:", style = MaterialTheme.typography.labelMedium, modifier = Modifier.align(Alignment.Start).padding(start = 4.dp))
+        LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(availableCategories) { cat ->
+                FilterChip(
+                    selected = selectedCategory?.id == cat.id,
+                    onClick = { selectedCategory = cat },
+                    label = { Text(cat.name) },
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = try { Color(android.graphics.Color.parseColor(cat.colorHex)) } catch (e: Exception) { Color.LightGray })
+                )
+            }
+        }
+
+        OutlinedButton(onClick = { datePickerDialog.show() }, modifier = Modifier.fillMaxWidth()) {
+            Text("Ngày giao dịch: $dateString", color = MaterialTheme.colorScheme.onSurface)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Số tiền") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("Ghi chú") }, modifier = Modifier.fillMaxWidth())
@@ -169,16 +219,17 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
         Button(
             onClick = {
                 val parsedAmount = amount.toDoubleOrNull() ?: 0.0
-                if (parsedAmount > 0 && selectedCategory != null) {
+                if (parsedAmount > 0 && selectedCategory != null && selectedWallet != null) { // Bắt buộc phải có Ví
                     val transaction = Transaction(
-                        id = editingTransaction?.id ?: "", // Giữ nguyên ID cũ nếu là Sửa
+                        id = editingTransaction?.id ?: "",
                         amount = parsedAmount,
                         note = note,
                         date = selectedDateMillis,
                         categoryId = selectedCategory!!.id,
-                        isIncome = isIncome
+                        isIncome = isIncome,
+                        walletId = selectedWallet!!.id // Lưu ID ví vào
                     )
-                    if (editingTransaction == null) viewModel.addTransaction(transaction, onSaved)
+                    if (editingTransaction == null) viewModel.addTransaction(parsedAmount, note, selectedCategory!!.id, selectedWallet!!.id, isIncome, onSaved) // Sửa dòng này
                     else viewModel.updateTransaction(transaction, onSaved)
                 }
             },
