@@ -24,6 +24,8 @@ import java.util.Locale
 import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun PomodoroSettingsDialog(
@@ -159,18 +161,37 @@ fun ConfigInputField(label: String, value: String, onValueChange: (String) -> Un
 @Composable
 fun PomodoroScreen(
     onBack: () -> Unit,
-    onNavigateToTimer: (PomodoroConfig) -> Unit
+    onNavigateToTimer: (PomodoroConfig) -> Unit,
+    pomodoroViewModel: PomodoroViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
-    var config by remember { mutableStateOf(PomodoroConfig(25, 5, 4, 15)) }
+    val context = LocalContext.current
+    val sharedPreferences = context.getSharedPreferences("PomodoroPrefs", Context.MODE_PRIVATE)
 
+    var config by remember {
+        mutableStateOf(
+            PomodoroConfig(
+                focusTime = sharedPreferences.getInt("focus_time", 25),
+                shortBreak = sharedPreferences.getInt("short_break", 5),
+                sessionsCount = sharedPreferences.getInt("sessions_count", 4),
+                longBreak = sharedPreferences.getInt("long_break", 15)
+            )
+        )
+    }
     // 🔥 1. Biến điều khiển bật/tắt Popup
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    val todayRecords = remember {
-        listOf(
-            PomodoroRecord(durationMinutes = 25, isCompleted = true),
-            PomodoroRecord(durationMinutes = 25, isCompleted = false)
-        )
+    val todayRecords = pomodoroViewModel.todayRecords
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                // Khi màn hình hiện lên, bắt ViewModel đi hỏi Firebase xem có lịch sử mới không
+                pomodoroViewModel.fetchTodayRecords()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Scaffold(
@@ -248,8 +269,17 @@ fun PomodoroScreen(
             currentConfig = config,
             onDismiss = { showSettingsDialog = false },
             onSave = { newConfig ->
+                // Cập nhật lên UI giao diện
                 config = newConfig
                 showSettingsDialog = false
+
+                // 🔥 2. LƯU VĨNH VIỄN VÀO BỘ NHỚ MÁY
+                sharedPreferences.edit()
+                    .putInt("focus_time", newConfig.focusTime)
+                    .putInt("short_break", newConfig.shortBreak)
+                    .putInt("sessions_count", newConfig.sessionsCount)
+                    .putInt("long_break", newConfig.longBreak)
+                    .apply()
             }
         )
     }
@@ -257,7 +287,18 @@ fun PomodoroScreen(
 
 @Composable
 fun RecordItem(record: PomodoroRecord) {
-    val timeString = SimpleDateFormat("HH:mm", Locale.getDefault()).format(record.startTime)
+    // 1. Phân loại Buổi (Sáng/Chiều/Tối)
+    val calendar = java.util.Calendar.getInstance().apply { timeInMillis = record.startTime }
+    val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+    val sessionName = when (hour) {
+        in 0..11 -> "Buổi sáng"
+        in 12..17 -> "Buổi chiều"
+        else -> "Buổi tối"
+    }
+
+    // 2. Format giờ cụ thể (VD: 08:30)
+    val timeString = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(record.startTime)
+
     val statusColor = if (record.isCompleted) Color(0xFF4CAF50) else Color(0xFFF44336)
     val statusIcon = if (record.isCompleted) Icons.Default.CheckCircle else Icons.Default.Cancel
     val statusText = if (record.isCompleted) "Hoàn thành" else "Thất bại"
@@ -266,20 +307,23 @@ fun RecordItem(record: PomodoroRecord) {
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(28.dp))
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Text("Phiên ${record.durationMinutes} phút", fontWeight = FontWeight.Bold)
-                    Text(timeString, fontSize = 12.sp, color = Color.Gray)
+        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(36.dp))
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                // Dòng 1: Thời gian & Buổi
+                Text("$timeString ($sessionName)", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+
+                // Dòng 2: Trạng thái & Phút thực tế
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(statusText, color = statusColor, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    Text(" • ${record.actualFocusMinutes} phút", fontSize = 14.sp, color = Color.DarkGray, modifier = Modifier.padding(start = 6.dp))
                 }
+
+                // Dòng 3: Cấu hình lúc chạy
+                Text("Cấu hình: ${record.configFocus}/${record.configShort}/${record.configSessions}/${record.configLong}", fontSize = 11.sp, color = Color.Gray, modifier = Modifier.padding(top = 4.dp))
             }
-            Text(statusText, color = statusColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         }
     }
 }
