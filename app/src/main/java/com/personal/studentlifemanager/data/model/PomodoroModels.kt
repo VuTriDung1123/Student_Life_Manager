@@ -7,7 +7,8 @@ data class PomodoroConfig(
     val focusTime: Int = 25,     // Phút tập trung
     val shortBreak: Int = 5,     // Phút nghỉ ngắn
     val sessionsCount: Int = 4,  // Số phiên trước khi nghỉ dài
-    val longBreak: Int = 15      // Phút nghỉ dài
+    val longBreak: Int = 15,      // Phút nghỉ dài
+    val autoStart: Boolean = true // Bật/tắt tự động chuyển phiên
 )
 
 // Lưu trữ lịch sử 1 phiên tập trung (Để biết Hoàn thành hay Thất bại)

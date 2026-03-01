@@ -36,6 +36,8 @@ import com.personal.studentlifemanager.R
 import com.personal.studentlifemanager.data.model.PomodoroConfig
 import com.personal.studentlifemanager.data.model.PomodoroRecord
 import kotlinx.coroutines.delay
+import android.os.Vibrator
+import android.os.VibrationEffect
 
 enum class PomodoroPhase(val title: String) {
     FOCUS("TẬP TRUNG"),
@@ -92,6 +94,15 @@ fun PomodoroTimerScreen(
         sfxPlayer?.start()
     }
 
+    fun vibratePhone() {
+        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            vibrator.vibrate(500)
+        }
+    }
+
     LaunchedEffect(bgmSelection, isRunning, currentPhase) {
         bgmPlayer?.release()
         bgmPlayer = null
@@ -142,12 +153,17 @@ fun PomodoroTimerScreen(
         }
 
         if (isRunning && timeLeft == 0L) {
+            vibratePhone() // 🔥 GỌI RUNG KHI HẾT GIỜ
+
             when (currentPhase) {
                 PomodoroPhase.FOCUS -> {
                     if (currentSession < config.sessionsCount) {
                         currentPhase = PomodoroPhase.SHORT_BREAK
                         timeLeft = config.shortBreak * 60L
                         playSfx(R.raw.japanese_school_bell)
+
+                        // 🔥 NẾU TẮT AUTO-START THÌ DỪNG LẠI CHỜ BẤM PLAY
+                        if (!config.autoStart) isRunning = false
                     } else {
                         isRunning = false
                         MediaPlayer.create(context.applicationContext, R.raw.ending_effect)?.start()
@@ -160,6 +176,9 @@ fun PomodoroTimerScreen(
                     currentPhase = PomodoroPhase.FOCUS
                     timeLeft = config.focusTime * 60L
                     playSfx(R.raw.japanese_school_bell)
+
+                    // 🔥 NẾU TẮT AUTO-START THÌ DỪNG LẠI CHỜ BẤM PLAY
+                    if (!config.autoStart) isRunning = false
                 }
                 PomodoroPhase.LONG_BREAK -> { }
             }

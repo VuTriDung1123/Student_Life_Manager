@@ -53,4 +53,15 @@ class PomodoroViewModel : ViewModel() {
                 todayRecords = records
             }
     }
+
+    // 🔥 3. XÓA LỊCH SỬ PHIÊN
+    fun deleteRecord(recordId: String) {
+        val userId = auth.currentUser?.uid ?: return
+        db.collection("users").document(userId).collection("pomodoro_records")
+            .document(recordId)
+            .delete()
+            .addOnSuccessListener {
+                fetchTodayRecords() // Xóa xong tải lại danh sách
+            }
+    }
 }
