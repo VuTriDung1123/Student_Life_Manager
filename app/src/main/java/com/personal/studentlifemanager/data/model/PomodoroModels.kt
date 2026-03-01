@@ -27,5 +27,7 @@ data class PomodoroRecord(
     @set:PropertyName("isCompleted")
     var isCompleted: Boolean = false, // true = Thành công, false = Thất bại
 
-    var actualFocusMinutes: Int = 0   // Số phút THỰC TẾ đã cày được (VD: Cài 25p nhưng 10p đã bấm Stop thì lưu số 10)
+    var actualFocusMinutes: Int = 0,
+    var taskName: String = ""
+
 )
