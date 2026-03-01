@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -102,33 +104,23 @@ fun ExpenseScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) }, // Gắn Snackbar vào Scaffold
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Chi tiêu", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
-                    // Nút xuất Excel (CSV)
+                    // 🔥 CHỈ GIỮ LẠI ĐÚNG NÚT BẢO MẬT TRÊN TOP BAR
                     IconButton(onClick = {
-                        val header = "Ngày,Loại,Danh mục,Nguồn tiền,Số tiền,Ghi chú\n"
-                        val data = transactions.joinToString("\n") { t ->
-                            val date = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(t.date)
-                            val type = if (t.isTransfer) "Chuyển tiền" else if (t.isIncome) "Thu nhập" else "Chi tiêu"
-                            val cat = viewModel.categories.find { c -> c.id == t.categoryId }?.name ?: ""
-                            val wallet = viewModel.wallets.find { w -> w.id == t.walletId }?.name ?: ""
-                            val amt = t.amount.toLong().toString()
-                            val note = t.note.replace(",", " ") // Xóa dấu phẩy để không làm hỏng file CSV
-                            "$date,$type,$cat,$wallet,$amt,$note"
-                        }
-                        csvContentToSave = header + data
-                        csvExportLauncher.launch("BaoCaoChiTieu_T${viewModel.selectedMonth + 1}.csv")
-                    }) { Icon(Icons.Default.Download, "Xuất CSV", tint = MaterialTheme.colorScheme.primary) }
-
-                    IconButton(onClick = { viewModel.toggleBalanceVisibility() }) { Icon(if (viewModel.isBalanceHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility, "Bảo mật", tint = MaterialTheme.colorScheme.primary) }
-                    IconButton(onClick = onNavigateToRecurring) { Icon(Icons.Default.Autorenew, null, tint = MaterialTheme.colorScheme.primary) }
-                    IconButton(onClick = onNavigateToBudget) { Icon(Icons.Default.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary) }
-                    IconButton(onClick = onNavigateToCategory) { Icon(Icons.Default.List, null, tint = MaterialTheme.colorScheme.primary) }
-                    IconButton(onClick = onNavigateToAnalytics) { Icon(Icons.Default.Analytics, null, tint = MaterialTheme.colorScheme.primary) }
+                        // Logic gọi vân tay của bạn giữ nguyên ở đây nhé
+                        viewModel.toggleBalanceVisibility()
+                    }) {
+                        Icon(
+                            imageVector = if (viewModel.isBalanceHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = "Bảo mật",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             )
         },
@@ -179,6 +171,61 @@ fun ExpenseScreen(
 
             Column(modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize()) {
                 MonthNavigation(viewModel)
+                // 🔥 THANH CÔNG CỤ NHANH (NẰM NGANG, VUỐT ĐƯỢC)
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        AssistChip(
+                            onClick = onNavigateToAnalytics,
+                            label = { Text("Báo cáo") },
+                            leadingIcon = { Icon(Icons.Default.Analytics, null, modifier = Modifier.size(18.dp)) }
+                        )
+                    }
+                    item {
+                        AssistChip(
+                            onClick = onNavigateToBudget,
+                            label = { Text("Ngân sách") },
+                            leadingIcon = { Icon(Icons.Default.AccountBalanceWallet, null, modifier = Modifier.size(18.dp)) }
+                        )
+                    }
+                    item {
+                        AssistChip(
+                            onClick = onNavigateToRecurring,
+                            label = { Text("Định kỳ") },
+                            leadingIcon = { Icon(Icons.Default.Autorenew, null, modifier = Modifier.size(18.dp)) }
+                        )
+                    }
+                    item {
+                        AssistChip(
+                            onClick = onNavigateToCategory,
+                            label = { Text("Danh mục") },
+                            leadingIcon = { Icon(Icons.Default.List, null, modifier = Modifier.size(18.dp)) }
+                        )
+                    }
+                    item {
+                        AssistChip(
+                            onClick = {
+                                // Logic xuất CSV giữ nguyên như cũ
+                                val header = "Ngày,Loại,Danh mục,Nguồn tiền,Số tiền,Ghi chú\n"
+                                val data = transactions.joinToString("\n") { t ->
+                                    val date = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(t.date)
+                                    val type = if (t.isTransfer) "Chuyển tiền" else if (t.isIncome) "Thu nhập" else "Chi tiêu"
+                                    val cat = viewModel.categories.find { c -> c.id == t.categoryId }?.name ?: ""
+                                    val wallet = viewModel.wallets.find { w -> w.id == t.walletId }?.name ?: ""
+                                    val amt = t.amount.toLong().toString()
+                                    val note = t.note.replace(",", " ")
+                                    "$date,$type,$cat,$wallet,$amt,$note"
+                                }
+                                csvContentToSave = header + data
+                                csvExportLauncher.launch("BaoCaoChiTieu_T${viewModel.selectedMonth + 1}.csv")
+                            },
+                            label = { Text("Xuất CSV") },
+                            leadingIcon = { Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp)) }
+                        )
+                    }
+                }
 
                 Text("Số dư các ví", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -331,7 +378,15 @@ fun AddTransactionForm(viewModel: ExpenseViewModel, editingTransaction: Transact
     var showAbnormalWarning by remember { mutableStateOf(false) }
     var pendingTransactionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
-    Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .navigationBarsPadding() // Tránh dính thanh điều hướng ảo
+            .imePadding() // 🔥 Tự động đẩy form lên khi bàn phím xuất hiện
+            .verticalScroll(rememberScrollState()), // 🔥 Cho phép vuốt cuộn lên xuống
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Text(if (editingTransaction == null) "Giao dịch mới" else "Sửa giao dịch", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {

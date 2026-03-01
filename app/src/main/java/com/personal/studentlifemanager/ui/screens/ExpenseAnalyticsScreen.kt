@@ -232,8 +232,9 @@ fun ExpenseAnalyticsScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = vie
 
                 // Biểu đồ danh mục (Giữ nguyên)
                 item {
-                    if (chartTotal > 0) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(200.dp).padding(bottom = 16.dp)) {
+                    // 🔥 Bỏ cái if (chartTotal > 0) ra ngoài Box để Box luôn luôn tồn tại giữ chỗ
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(200.dp).padding(bottom = 16.dp)) {
+                        if (chartTotal > 0) {
                             Canvas(modifier = Modifier.size(180.dp)) {
                                 var start = -90f
                                 chartData.forEach { dataPair ->
@@ -246,6 +247,12 @@ fun ExpenseAnalyticsScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = vie
                                 }
                             }
                             Text(formatter.format(chartTotal), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        } else {
+                            // 🔥 Khi không có dữ liệu (0đ), vẽ một vòng tròn xám mờ để không bị sập UI
+                            Canvas(modifier = Modifier.size(180.dp)) {
+                                drawArc(Color.LightGray.copy(alpha = 0.3f), -90f, 360f, false, style = Stroke(50f))
+                            }
+                            Text("0 ₫", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                         }
                     }
                 }
@@ -272,12 +279,6 @@ fun ExpenseAnalyticsScreen(onBack: () -> Unit, viewModel: ExpenseViewModel = vie
         }
     }
 }
-
-//// Helper function để lấy tiền tháng hiện tại tô đậm cột Bar Chart
-//@Composable
-//fun currentMonthExpense(viewModel: ExpenseViewModel): Double {
-//    return viewModel.getExpenseForMonth(viewModel.selectedMonth, viewModel.selectedYear)
-//}
 
 @Composable
 fun LegendItem(color: Color, label: String, percent: Double) {
