@@ -46,7 +46,8 @@ enum class PomodoroPhase(val title: String) {
 @Composable
 fun PomodoroTimerScreen(
     config: PomodoroConfig,
-    pomodoroViewModel: PomodoroViewModel = androidx.lifecycle.viewmodel.compose.viewModel(), // Gọi ViewModel
+    taskName: String, // Đã thêm tham số nhận tên Task
+    pomodoroViewModel: PomodoroViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -58,10 +59,7 @@ fun PomodoroTimerScreen(
     var timeLeft by remember { mutableLongStateOf(config.focusTime * 60L) }
     var isRunning by remember { mutableStateOf(true) }
 
-    // 🔥 Biến quản lý trạng thái hiển thị Popup Dừng
     var showExitDialog by remember { mutableStateOf(false) }
-
-    // 🔥 Ghi nhớ thời điểm bấm Bắt đầu
     val startTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     var bgmSelection by remember { mutableIntStateOf(0) }
@@ -75,7 +73,6 @@ fun PomodoroTimerScreen(
     var bgmPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var sfxPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
 
-    // 1. Ẩn thanh điều hướng (Immersive Mode)
     DisposableEffect(view) {
         val window = (view.context as? Activity)?.window
         val insetsController = window?.let { WindowCompat.getInsetsController(it, view) }
@@ -89,7 +86,6 @@ fun PomodoroTimerScreen(
         }
     }
 
-    // 2. Hệ thống phát nhạc (SFX & Nhạc nền)
     fun playSfx(resId: Int) {
         sfxPlayer?.release()
         sfxPlayer = MediaPlayer.create(context, resId)
@@ -106,10 +102,8 @@ fun PomodoroTimerScreen(
         }
     }
 
-    // 🔥 3. HÀM CHUYÊN DỤNG ĐỂ LƯU DATABASE
     fun saveSessionToDb(isSuccess: Boolean) {
         val endTime = System.currentTimeMillis()
-        // Tính số phút thực tế đã cày được (Làm tròn xuống)
         val actualMinutes = ((endTime - startTime) / 60000).toInt()
 
         val record = PomodoroRecord(
@@ -120,21 +114,20 @@ fun PomodoroTimerScreen(
             configSessions = config.sessionsCount,
             configLong = config.longBreak,
             isCompleted = isSuccess,
-            // Nếu thành công thì tính full thời gian, nếu thất bại thì tính thời gian thực tế
-            actualFocusMinutes = if (isSuccess) config.focusTime else actualMinutes
+            actualFocusMinutes = if (isSuccess) config.focusTime else actualMinutes,
+            taskName = taskName // Ghi nhận tên Task vào DB
         )
         pomodoroViewModel.saveRecord(record)
     }
 
-    // 🔥 4. BẮT SỰ KIỆN OUT APP (ĐẨY XUỐNG BACKGROUND)
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
                 if (isRunning) {
                     isRunning = false
-                    saveSessionToDb(isSuccess = false) // GHI NHẬN THẤT BẠI
+                    saveSessionToDb(isSuccess = false)
                     sendAbortNotification(context)
-                    onBack() // Ép văng ra ngoài
+                    onBack()
                 }
             }
         }
@@ -142,7 +135,6 @@ fun PomodoroTimerScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // 5. LOGIC ĐẾM NGƯỢC
     LaunchedEffect(isRunning, currentPhase) {
         while (isRunning && timeLeft > 0) {
             delay(1000)
@@ -157,12 +149,9 @@ fun PomodoroTimerScreen(
                         timeLeft = config.shortBreak * 60L
                         playSfx(R.raw.japanese_school_bell)
                     } else {
-                        // 🎉 HOÀN THÀNH TOÀN BỘ PHIÊN
                         isRunning = false
                         MediaPlayer.create(context.applicationContext, R.raw.ending_effect)?.start()
-
-                        saveSessionToDb(isSuccess = true) // GHI NHẬN THÀNH CÔNG
-
+                        saveSessionToDb(isSuccess = true)
                         onBack()
                     }
                 }
@@ -172,12 +161,11 @@ fun PomodoroTimerScreen(
                     timeLeft = config.focusTime * 60L
                     playSfx(R.raw.japanese_school_bell)
                 }
-                PomodoroPhase.LONG_BREAK -> { /* Tạm bỏ qua theo logic của bạn */ }
+                PomodoroPhase.LONG_BREAK -> { }
             }
         }
     }
 
-    // --- GIAO DIỆN ---
     val minutes = timeLeft / 60
     val seconds = timeLeft % 60
     val timeString = String.format("%02d:%02d", minutes, seconds)
@@ -194,10 +182,7 @@ fun PomodoroTimerScreen(
     ) {
         var expandedBgm by remember { mutableStateOf(false) }
         Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp)) {
-            FilledTonalButton(
-                onClick = { expandedBgm = true },
-                colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFFE0E0E0))
-            ) {
+            FilledTonalButton(onClick = { expandedBgm = true }, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFFE0E0E0))) {
                 Icon(Icons.Default.MusicNote, null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(bgmList[bgmSelection].first)
@@ -210,20 +195,28 @@ fun PomodoroTimerScreen(
         }
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFFF1F8E9), modifier = Modifier.padding(bottom = 32.dp)) {
+            Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFFF1F8E9), modifier = Modifier.padding(bottom = 16.dp)) {
                 Text("PHIÊN $currentSession / ${config.sessionsCount} - ${currentPhase.title}", fontWeight = FontWeight.Bold, color = Color(0xFF388E3C), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             }
+
+            // 🔥 HIỂN THỊ MỤC TIÊU CÔNG VIỆC
+            Text(
+                text = "Mục tiêu: $taskName",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.Gray,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
 
             Text(timeString, fontSize = 90.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onBackground)
 
             Spacer(modifier = Modifier.height(100.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                // 🔥 NÚT DỪNG (Kích hoạt Popup)
                 IconButton(
                     onClick = {
-                        isRunning = false // Tạm dừng đồng hồ trước khi hỏi
-                        showExitDialog = true // Mở popup
+                        isRunning = false
+                        showExitDialog = true
                     },
                     modifier = Modifier.size(64.dp).background(Color(0xFFEEEEEE), RoundedCornerShape(16.dp))
                 ) {
@@ -245,11 +238,9 @@ fun PomodoroTimerScreen(
         }
     }
 
-    // 🔥 POPUP XÁC NHẬN KHI BẤM NÚT STOP
     if (showExitDialog) {
         AlertDialog(
             onDismissRequest = {
-                // Bấm ra ngoài popup thì tiếp tục đếm ngược
                 showExitDialog = false
                 isRunning = true
             },
@@ -259,38 +250,27 @@ fun PomodoroTimerScreen(
                 Button(
                     onClick = {
                         showExitDialog = false
-                        saveSessionToDb(isSuccess = false) // GHI NHẬN THẤT BẠI
-                        onBack() // Văng ra ngoài
+                        saveSessionToDb(isSuccess = false)
+                        onBack()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336)) // Nút màu đỏ cảnh báo
-                ) {
-                    Text("Chắc chắn dừng", color = Color.White)
-                }
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))
+                ) { Text("Chắc chắn dừng", color = Color.White) }
             },
             dismissButton = {
-                TextButton(
-                    onClick = {
-                        showExitDialog = false
-                        isRunning = true // Tiếp tục chạy
-                    }
-                ) {
-                    Text("Tiếp tục tập trung", color = MaterialTheme.colorScheme.primary)
-                }
+                TextButton(onClick = { showExitDialog = false; isRunning = true }) { Text("Tiếp tục tập trung", color = MaterialTheme.colorScheme.primary) }
             }
         )
     }
 }
-// 🔥 HÀM GỬI THÔNG BÁO KHI OUT APP BỊ THIẾU ĐÂY RỒI
+
 fun sendAbortNotification(context: Context) {
     val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         val channel = NotificationChannel("pomodoro_channel", "Cảnh báo Pomodoro", NotificationManager.IMPORTANCE_HIGH)
         manager.createNotificationChannel(channel)
     }
-
     val notification = NotificationCompat.Builder(context, "pomodoro_channel")
-        .setSmallIcon(android.R.drawable.ic_dialog_alert) // Bạn có thể thay bằng icon app của bạn
+        .setSmallIcon(android.R.drawable.ic_dialog_alert)
         .setContentTitle("Phiên Pomodoro thất bại!")
         .setContentText("Bạn đã rời khỏi ứng dụng. Sự mất tập trung này đã khiến phiên bị hủy.")
         .setAutoCancel(true)
