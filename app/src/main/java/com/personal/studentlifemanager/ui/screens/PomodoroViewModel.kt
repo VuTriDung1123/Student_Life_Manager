@@ -1,6 +1,7 @@
 package com.personal.studentlifemanager.ui.screens
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -117,6 +118,7 @@ class PomodoroViewModel : ViewModel() {
             .get()
             .addOnSuccessListener { snapshot ->
                 allTimeRecords = snapshot.documents.mapNotNull { it.toObject(PomodoroRecord::class.java) }
+                calculateGamification()
             }
     }
 
@@ -140,5 +142,93 @@ class PomodoroViewModel : ViewModel() {
             calculateStreak()
             fetchAllRecordsForReport() // Cập nhật lại kho data báo cáo
         }
+    }
+
+    // ==========================================
+    // 🔥 CHIẾN DỊCH 3: GAMIFICATION (THÀNH TỰU)
+    // ==========================================
+
+    data class PomodoroBadge(val id: Int, val name: String, val desc: String, val icon: String, var isUnlocked: Boolean = false)
+
+    var weeklyGoalSessions by mutableIntStateOf(20) // Mục tiêu: 20 phiên/tuần
+        private set
+    var currentWeeklySessions by mutableIntStateOf(0)
+        private set
+    var unlockedBadges by mutableStateOf<List<PomodoroBadge>>(emptyList())
+        private set
+
+    // Hàm tính toán toàn bộ Huy hiệu (Gọi chung ở cuối hàm fetchAllRecordsForReport)
+    fun calculateGamification() {
+        val successRecords = allTimeRecords.filter { it.isCompleted }
+        val failRecords = allTimeRecords.filter { !it.isCompleted }
+
+        val totalSuccess = successRecords.size
+        val totalMins = successRecords.sumOf { it.actualFocusMinutes }
+
+        // Tính tiến độ Tuần
+        val startOfWeek = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+        }
+        currentWeeklySessions = successRecords.count { it.startTime >= startOfWeek.timeInMillis }
+
+        // Nhận diện Giờ giấc & Các điều kiện đặc biệt
+        val hasNightOwl = successRecords.any { Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY) in 0..3 }
+        val hasEarlyBird = successRecords.any { Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY) in 4..6 }
+        val hasNoon = successRecords.any { Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY) in 11..13 }
+
+        val maxSessionsInOneDay = successRecords.groupBy {
+            val cal = Calendar.getInstance().apply { timeInMillis = it.startTime }
+            "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
+        }.maxOfOrNull { it.value.size } ?: 0
+
+        val hasLongFocus = successRecords.any { it.actualFocusMinutes >= 50 }
+        val hasSpeedFocus = successRecords.any { it.actualFocusMinutes in 1..15 }
+        val weekendSessions = successRecords.count {
+            val day = Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.DAY_OF_WEEK)
+            day == Calendar.SATURDAY || day == Calendar.SUNDAY
+        }
+        val namedTasksCount = successRecords.count { it.taskName.isNotBlank() && it.taskName != "Tự do" }
+
+        // KHỞI TẠO 22 HUY HIỆU CƠ BẢN
+        val badges = mutableListOf(
+            PomodoroBadge(1, "Tân Binh", "Hoàn thành phiên đầu tiên", "🌱", totalSuccess >= 1),
+            PomodoroBadge(2, "Thợ Săn", "Hoàn thành 10 phiên", "🏹", totalSuccess >= 10),
+            PomodoroBadge(3, "Tinh Anh", "Hoàn thành 50 phiên", "⚔️", totalSuccess >= 50),
+            PomodoroBadge(4, "Huyền Thoại", "Hoàn thành 100 phiên", "👑", totalSuccess >= 100),
+            PomodoroBadge(5, "Thần Thoại", "Hoàn thành 500 phiên", "🐉", totalSuccess >= 500),
+
+            PomodoroBadge(6, "Cú Đêm", "Học từ 0h - 4h sáng", "🦉", hasNightOwl),
+            PomodoroBadge(7, "Bình Minh", "Học từ 4h - 6h sáng", "🌅", hasEarlyBird),
+            PomodoroBadge(8, "Xuyên Trưa", "Học từ 11h - 13h trưa", "☀️", hasNoon),
+
+            PomodoroBadge(9, "Combo x4", "4 phiên trong 1 ngày", "🔥", maxSessionsInOneDay >= 4),
+            PomodoroBadge(10, "Combo Bạo Kích", "8 phiên trong 1 ngày", "💥", maxSessionsInOneDay >= 8),
+
+            PomodoroBadge(11, "Lửa Nhỏ", "Streak 3 ngày liên tiếp", "🕯️", currentStreak >= 3),
+            PomodoroBadge(12, "Lửa Thiêng", "Streak 7 ngày liên tiếp", "🏕️", currentStreak >= 7),
+            PomodoroBadge(13, "Bất Diệt", "Streak 30 ngày liên tiếp", "🌋", currentStreak >= 30),
+
+            PomodoroBadge(14, "Tuần Lễ Vàng", "Đạt mục tiêu $weeklyGoalSessions phiên/tuần", "🏆", currentWeeklySessions >= weeklyGoalSessions),
+
+            PomodoroBadge(15, "Nhịp Điệu Chậm", "1 phiên dài >= 50 phút", "🎵", hasLongFocus),
+            PomodoroBadge(16, "Tốc Độ Ánh Sáng", "1 phiên chớp nhoáng <= 15 phút", "⚡", hasSpeedFocus),
+
+            PomodoroBadge(17, "Khối Vuông Sinh Tồn", "Cày 10 phiên vào Thứ 7/CN", "🔲", weekendSessions >= 10),
+            PomodoroBadge(18, "Nhà Lên Kế Hoạch", "Ghi chú tên Task cho 20 phiên", "📝", namedTasksCount >= 20),
+            PomodoroBadge(19, "Không Bỏ Cuộc", "Có thất bại nhưng vẫn đạt 10 thành công", "❤️‍🩹", failRecords.isNotEmpty() && totalSuccess >= 10),
+
+            PomodoroBadge(20, "Gacha May Mắn", "Đạt tổng số 777 phút", "🎰", totalMins >= 777),
+            PomodoroBadge(21, "Cỗ Máy Thời Gian", "Tích lũy 1000 phút", "⏳", totalMins >= 1000),
+            PomodoroBadge(22, "Siêu Việt", "Tích lũy 5000 phút", "🌌", totalMins >= 5000)
+        )
+
+        // TÍNH HUY HIỆU TỐI THƯỢNG (Thứ 23)
+        val unlockedCount = badges.count { it.isUnlocked }
+        badges.add(
+            PomodoroBadge(23, "Kẻ Thống Trị Vạn Vật", "Mở khóa toàn bộ 22 huy hiệu trên", "👁️‍🗨️", unlockedCount == 22)
+        )
+
+        unlockedBadges = badges
     }
 }
