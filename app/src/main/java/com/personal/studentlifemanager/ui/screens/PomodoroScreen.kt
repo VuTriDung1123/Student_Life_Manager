@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -37,6 +38,7 @@ import java.util.Locale
 fun PomodoroScreen(
     onBack: () -> Unit,
     onNavigateToTimer: (PomodoroConfig, String) -> Unit,
+    onNavigateToReport: () -> Unit,
     pomodoroViewModel: PomodoroViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val context = LocalContext.current
@@ -71,6 +73,7 @@ fun PomodoroScreen(
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 pomodoroViewModel.fetchRecordsForSelectedDate()
+                // Gắn thêm hàm tải dữ liệu Analytics nếu cần
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -84,14 +87,17 @@ fun PomodoroScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
-                // 🔥 ĐƯA STREAK VÀ TỔNG TUẦN LÊN TOPBAR
                 actions = {
                     Column(
                         horizontalAlignment = Alignment.End,
-                        modifier = Modifier.padding(end = 16.dp)
+                        modifier = Modifier.padding(end = 8.dp)
                     ) {
                         Text("Tuần: ${pomodoroViewModel.weeklyTotalMinutes} phút", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Text("🔥 Chuỗi: ${pomodoroViewModel.currentStreak} ngày", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5722))
+                    }
+                    // 🔥 NÚT BÁO CÁO NẰM Ở GÓC PHẢI
+                    IconButton(onClick = onNavigateToReport) {
+                        Icon(Icons.Default.Assessment, contentDescription = "Báo cáo", tint = MaterialTheme.colorScheme.primary)
                     }
                 }
             )
@@ -105,7 +111,7 @@ fun PomodoroScreen(
         ) {
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 🔥 1. CARD CÀI ĐẶT & BẮT ĐẦU (Đưa lên vị trí số 1)
+            // 1. CARD CÀI ĐẶT & BẮT ĐẦU
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -159,7 +165,7 @@ fun PomodoroScreen(
             HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 🔥 2. ĐIỀU HƯỚNG NGÀY THÁNG (Đưa xuống giữa)
+            // 2. ĐIỀU HƯỚNG NGÀY THÁNG
             val dateStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(pomodoroViewModel.selectedDate.time)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -171,37 +177,9 @@ fun PomodoroScreen(
                 IconButton(onClick = { pomodoroViewModel.changeDate(1) }) { Icon(Icons.Default.ChevronRight, "Hôm sau") }
             }
 
-            // 🔥 3. THỐNG KÊ TASK
-            val completedRecords = currentDateRecords.filter { it.isCompleted }
-            if (completedRecords.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Tiến độ theo Task", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val taskStats = completedRecords.groupBy { if (it.taskName.isBlank()) "Tự do" else it.taskName }
-
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(taskStats.entries.toList()) { entry ->
-                        val taskName = entry.key
-                        val pomodoroCount = entry.value.size
-                        val totalMinutes = entry.value.sumOf { it.actualFocusMinutes }
-
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(taskName, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
-                                Text("$pomodoroCount phiên • $totalMinutes phút", fontSize = 12.sp, color = Color.DarkGray)
-                            }
-                        }
-                    }
-                }
-            }
-
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 🔥 4. THỐNG KÊ CƠ BẢN CỦA NGÀY & DANH SÁCH LỊCH SỬ
+            // 🔥 3. THỐNG KÊ CƠ BẢN CỦA NGÀY & DANH SÁCH LỊCH SỬ
             val totalCompleted = currentDateRecords.count { it.isCompleted }
             val totalMinutes = currentDateRecords.filter { it.isCompleted }.sumOf { it.actualFocusMinutes }
 

@@ -158,27 +158,34 @@ class PomodoroViewModel : ViewModel() {
     var mostProductiveDay by mutableStateOf("Chưa có")
         private set
 
-    // Hàm cày nát Database để tìm ra các thói quen của người dùng
+    // 🔥 BIẾN MỚI: Thống kê Task toàn thời gian
+    var allTimeTaskStats by mutableStateOf<Map<String, Pair<Int, Int>>>(emptyMap())
+        private set
+
+    // Đừng quên gọi fetchAnalyticsData() trong khối init{} và trong hàm saveRecord(), deleteRecord() nhé!
     private fun fetchAnalyticsData() {
         val userId = auth.currentUser?.uid ?: return
         db.collection("users").document(userId).collection("pomodoro_records")
-            .whereEqualTo("isCompleted", true) // Chỉ lấy các quả cà chua đã chín (thành công)
+            .whereEqualTo("isCompleted", true)
             .get()
             .addOnSuccessListener { snapshot ->
                 val records = snapshot.documents.mapNotNull { it.toObject(PomodoroRecord::class.java) }
-                if (records.isEmpty()) return@addOnSuccessListener
+                if (records.isEmpty()) {
+                    allTimeTaskStats = emptyMap()
+                    return@addOnSuccessListener
+                }
 
-                // 1. Tính độ dài trung bình của 1 phiên ngồi học
+                // 1. Thời lượng trung bình
                 averageFocusLength = records.sumOf { it.actualFocusMinutes } / records.size
 
-                // 2. Tìm thời điểm Focus tốt nhất trong ngày (Nhiều phiên nhất)
+                // 2. Khung giờ vàng
                 val timeGroup = records.groupBy {
                     val hour = Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY)
                     when (hour) { in 5..11 -> "Buổi Sáng"; in 12..17 -> "Buổi Chiều"; else -> "Buổi Tối" }
                 }
                 bestTimeOfDay = timeGroup.maxByOrNull { it.value.size }?.key ?: "Chưa có"
 
-                // 3. Tìm Ngày năng suất nhất trong tuần (Tổng số phút cao nhất)
+                // 3. Ngày năng suất nhất
                 val dayGroup = records.groupBy {
                     val day = Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.DAY_OF_WEEK)
                     when (day) {
@@ -187,6 +194,12 @@ class PomodoroViewModel : ViewModel() {
                     }
                 }
                 mostProductiveDay = dayGroup.maxByOrNull { it.value.sumOf { r -> r.actualFocusMinutes } }?.key ?: "Chưa có"
+
+                // 🔥 4. THỐNG KÊ TASK (Gom nhóm theo tên Task, trả về Pair<Số phiên, Tổng phút>)
+                val taskGroup = records.groupBy { if (it.taskName.isBlank()) "Tự do" else it.taskName }
+                allTimeTaskStats = taskGroup.mapValues { entry ->
+                    Pair(entry.value.size, entry.value.sumOf { it.actualFocusMinutes })
+                }
             }
     }
 }
