@@ -320,13 +320,19 @@ fun RecordItem(record: PomodoroRecord, pomodoroViewModel: PomodoroViewModel = an
     val statusColor = if (record.isCompleted) Color(0xFF4CAF50) else Color(0xFFF44336)
     val statusIcon = if (record.isCompleted) Icons.Default.CheckCircle else Icons.Default.Cancel
 
+    // 🔥 TẠO CHUỖI CẤU HÌNH POMODORO ĐỂ HIỂN THỊ
+    val configString = "${record.configFocus}/${record.configShort}/${record.configSessions}/${record.configLong}"
+
     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(36.dp))
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(if (record.taskName.isNotEmpty()) record.taskName else "Tự do", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("$timeString ($sessionName)", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 2.dp))
+
+                // 🔥 CHÈN THÊM CẤU HÌNH VÀO DÒNG NÀY
+                Text("$timeString ($sessionName) • [Cấu hình: $configString]", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 2.dp))
+
                 Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
                     Text(if (record.isCompleted) "Hoàn thành" else "Thất bại", color = statusColor, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                     Text(" • ${record.actualFocusMinutes} phút", fontSize = 14.sp, color = Color.DarkGray, modifier = Modifier.padding(start = 6.dp))

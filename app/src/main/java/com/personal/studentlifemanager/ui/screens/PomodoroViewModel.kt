@@ -1,6 +1,7 @@
 package com.personal.studentlifemanager.ui.screens
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -144,5 +145,48 @@ class PomodoroViewModel : ViewModel() {
             fetchWeeklyTotal()
             calculateStreak()
         }
+    }
+
+
+    // ==========================================
+    // 🔥 CHIẾN DỊCH 2: LOCAL ANALYTICS
+    // ==========================================
+    var averageFocusLength by mutableIntStateOf(0)
+        private set
+    var bestTimeOfDay by mutableStateOf("Chưa có")
+        private set
+    var mostProductiveDay by mutableStateOf("Chưa có")
+        private set
+
+    // Hàm cày nát Database để tìm ra các thói quen của người dùng
+    private fun fetchAnalyticsData() {
+        val userId = auth.currentUser?.uid ?: return
+        db.collection("users").document(userId).collection("pomodoro_records")
+            .whereEqualTo("isCompleted", true) // Chỉ lấy các quả cà chua đã chín (thành công)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                val records = snapshot.documents.mapNotNull { it.toObject(PomodoroRecord::class.java) }
+                if (records.isEmpty()) return@addOnSuccessListener
+
+                // 1. Tính độ dài trung bình của 1 phiên ngồi học
+                averageFocusLength = records.sumOf { it.actualFocusMinutes } / records.size
+
+                // 2. Tìm thời điểm Focus tốt nhất trong ngày (Nhiều phiên nhất)
+                val timeGroup = records.groupBy {
+                    val hour = Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY)
+                    when (hour) { in 5..11 -> "Buổi Sáng"; in 12..17 -> "Buổi Chiều"; else -> "Buổi Tối" }
+                }
+                bestTimeOfDay = timeGroup.maxByOrNull { it.value.size }?.key ?: "Chưa có"
+
+                // 3. Tìm Ngày năng suất nhất trong tuần (Tổng số phút cao nhất)
+                val dayGroup = records.groupBy {
+                    val day = Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.DAY_OF_WEEK)
+                    when (day) {
+                        Calendar.MONDAY -> "Thứ 2"; Calendar.TUESDAY -> "Thứ 3"; Calendar.WEDNESDAY -> "Thứ 4"
+                        Calendar.THURSDAY -> "Thứ 5"; Calendar.FRIDAY -> "Thứ 6"; Calendar.SATURDAY -> "Thứ 7"; else -> "Chủ Nhật"
+                    }
+                }
+                mostProductiveDay = dayGroup.maxByOrNull { it.value.sumOf { r -> r.actualFocusMinutes } }?.key ?: "Chưa có"
+            }
     }
 }
