@@ -145,19 +145,38 @@ class PomodoroViewModel : ViewModel() {
     }
 
     // ==========================================
-    // 🔥 CHIẾN DỊCH 3: GAMIFICATION (THÀNH TỰU)
+    // 🔥 CHIẾN DỊCH 3: GAMIFICATION (THÀNH TỰU & NHIỆM VỤ TUẦN)
     // ==========================================
 
     data class PomodoroBadge(val id: Int, val name: String, val desc: String, val icon: String, var isUnlocked: Boolean = false)
 
-    var weeklyGoalSessions by mutableIntStateOf(20) // Mục tiêu: 20 phiên/tuần
+    // Cấu trúc của 1 Nhiệm vụ tuần
+    data class WeeklyMission(val id: Int, val title: String, val desc: String, val target: Int, val isMinutes: Boolean)
+
+    // Kho chứa 10 Nhiệm vụ luân phiên
+    private val weeklyMissionsList = listOf(
+        WeeklyMission(0, "Khởi Động Nhẹ Nhàng", "Hoàn thành 10 phiên Pomodoro", 10, false),
+        WeeklyMission(1, "Sức Bền Thời Gian", "Tích lũy 200 phút tập trung", 200, true),
+        WeeklyMission(2, "Chiến Binh Chăm Chỉ", "Hoàn thành 20 phiên Pomodoro", 20, false),
+        WeeklyMission(3, "Thợ Săn Cà Chua", "Tích lũy 400 phút tập trung", 400, true),
+        WeeklyMission(4, "Bứt Phá Giới Hạn", "Hoàn thành 25 phiên Pomodoro", 25, false),
+        WeeklyMission(5, "Tuần Lễ Tập Trung", "Tích lũy 600 phút tập trung", 600, true),
+        WeeklyMission(6, "Duy Trì Phong Độ", "Hoàn thành 15 phiên Pomodoro", 15, false),
+        WeeklyMission(7, "Năng Suất Tối Đa", "Tích lũy 500 phút tập trung", 500, true),
+        WeeklyMission(8, "Cỗ Máy Thời Gian", "Hoàn thành 30 phiên Pomodoro", 30, false),
+        WeeklyMission(9, "Thử Thách Cực Đại", "Tích lũy 800 phút tập trung", 800, true)
+    )
+
+    // Biến lưu nhiệm vụ của tuần hiện tại
+    var currentWeeklyMission by mutableStateOf(weeklyMissionsList[0])
         private set
-    var currentWeeklySessions by mutableIntStateOf(0)
+    // Tiến độ hiện tại của nhiệm vụ đó
+    var currentWeeklyProgress by mutableIntStateOf(0)
         private set
+
     var unlockedBadges by mutableStateOf<List<PomodoroBadge>>(emptyList())
         private set
 
-    // Hàm tính toán toàn bộ Huy hiệu (Gọi chung ở cuối hàm fetchAllRecordsForReport)
     fun calculateGamification() {
         val successRecords = allTimeRecords.filter { it.isCompleted }
         val failRecords = allTimeRecords.filter { !it.isCompleted }
@@ -165,12 +184,22 @@ class PomodoroViewModel : ViewModel() {
         val totalSuccess = successRecords.size
         val totalMins = successRecords.sumOf { it.actualFocusMinutes }
 
-        // Tính tiến độ Tuần
+        // 🔥 LẤY NHIỆM VỤ CỦA TUẦN NÀY (Dựa vào tuần thứ mấy trong năm)
+        val weekOfYear = Calendar.getInstance().get(Calendar.WEEK_OF_YEAR)
+        currentWeeklyMission = weeklyMissionsList[weekOfYear % weeklyMissionsList.size]
+
+        // 🔥 TÍNH TIẾN ĐỘ CHO NHIỆM VỤ TUẦN
         val startOfWeek = Calendar.getInstance().apply {
             set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
         }
-        currentWeeklySessions = successRecords.count { it.startTime >= startOfWeek.timeInMillis }
+        val recordsThisWeek = successRecords.filter { it.startTime >= startOfWeek.timeInMillis }
+
+        currentWeeklyProgress = if (currentWeeklyMission.isMinutes) {
+            recordsThisWeek.sumOf { it.actualFocusMinutes } // Nhiệm vụ yêu cầu Phút
+        } else {
+            recordsThisWeek.size // Nhiệm vụ yêu cầu Số phiên
+        }
 
         // Nhận diện Giờ giấc & Các điều kiện đặc biệt
         val hasNightOwl = successRecords.any { Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY) in 0..3 }
@@ -190,7 +219,7 @@ class PomodoroViewModel : ViewModel() {
         }
         val namedTasksCount = successRecords.count { it.taskName.isNotBlank() && it.taskName != "Tự do" }
 
-        // KHỞI TẠO 22 HUY HIỆU CƠ BẢN
+        // KHỞI TẠO 22 HUY HIỆU
         val badges = mutableListOf(
             PomodoroBadge(1, "Tân Binh", "Hoàn thành phiên đầu tiên", "🌱", totalSuccess >= 1),
             PomodoroBadge(2, "Thợ Săn", "Hoàn thành 10 phiên", "🏹", totalSuccess >= 10),
@@ -209,13 +238,14 @@ class PomodoroViewModel : ViewModel() {
             PomodoroBadge(12, "Lửa Thiêng", "Streak 7 ngày liên tiếp", "🏕️", currentStreak >= 7),
             PomodoroBadge(13, "Bất Diệt", "Streak 30 ngày liên tiếp", "🌋", currentStreak >= 30),
 
-            PomodoroBadge(14, "Tuần Lễ Vàng", "Đạt mục tiêu $weeklyGoalSessions phiên/tuần", "🏆", currentWeeklySessions >= weeklyGoalSessions),
+            // 🔥 NÂNG CẤP HUY HIỆU TUẦN LỄ VÀNG: BÁM THEO NHIỆM VỤ ĐỘNG CỦA TUẦN NÀY
+            PomodoroBadge(14, "Tuần Lễ Vàng", "Hoàn thành Nhiệm vụ Tuần này", "🏆", currentWeeklyProgress >= currentWeeklyMission.target),
 
             PomodoroBadge(15, "Nhịp Điệu Chậm", "1 phiên dài >= 50 phút", "🎵", hasLongFocus),
             PomodoroBadge(16, "Tốc Độ Ánh Sáng", "1 phiên chớp nhoáng <= 15 phút", "⚡", hasSpeedFocus),
 
-            PomodoroBadge(17, "Khối Vuông Sinh Tồn", "Cày 10 phiên vào Thứ 7/CN", "🔲", weekendSessions >= 10),
-            PomodoroBadge(18, "Nhà Lên Kế Hoạch", "Ghi chú tên Task cho 20 phiên", "📝", namedTasksCount >= 20),
+            PomodoroBadge(17, "Khối Sinh Tồn", "Cày 10 phiên vào Thứ 7/CN", "🔲", weekendSessions >= 10),
+            PomodoroBadge(18, "Nhà Lên Kế Hoạch", "Ghi tên Task cho 20 phiên", "📝", namedTasksCount >= 20),
             PomodoroBadge(19, "Không Bỏ Cuộc", "Có thất bại nhưng vẫn đạt 10 thành công", "❤️‍🩹", failRecords.isNotEmpty() && totalSuccess >= 10),
 
             PomodoroBadge(20, "Gacha May Mắn", "Đạt tổng số 777 phút", "🎰", totalMins >= 777),
@@ -223,11 +253,8 @@ class PomodoroViewModel : ViewModel() {
             PomodoroBadge(22, "Siêu Việt", "Tích lũy 5000 phút", "🌌", totalMins >= 5000)
         )
 
-        // TÍNH HUY HIỆU TỐI THƯỢNG (Thứ 23)
         val unlockedCount = badges.count { it.isUnlocked }
-        badges.add(
-            PomodoroBadge(23, "Kẻ Thống Trị Vạn Vật", "Mở khóa toàn bộ 22 huy hiệu trên", "👁️‍🗨️", unlockedCount == 22)
-        )
+        badges.add(PomodoroBadge(23, "Kẻ Thống Trị Vạn Vật", "Mở khóa 22 huy hiệu trên", "👁️‍🗨️", unlockedCount == 22))
 
         unlockedBadges = badges
     }

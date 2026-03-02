@@ -165,27 +165,34 @@ fun AnalyticsView(pomodoroViewModel: PomodoroViewModel) {
 }
 
 // ==========================================
-// TRANG 2: THÀNH TỰU VÀ MỤC TIÊU
+// TRANG 2: THÀNH TỰU VÀ MỤC TIÊU ĐỘNG (LUÂN PHIÊN MỖI TUẦN)
 // ==========================================
 @Composable
 fun GamificationView(pomodoroViewModel: PomodoroViewModel) {
-    val weeklyGoal = pomodoroViewModel.weeklyGoalSessions
-    val currentProgress = pomodoroViewModel.currentWeeklySessions
-    val progressRatio = (currentProgress.toFloat() / weeklyGoal.toFloat()).coerceIn(0f, 1f)
+    // Lấy nhiệm vụ động của tuần này
+    val mission = pomodoroViewModel.currentWeeklyMission
+    val currentProgress = pomodoroViewModel.currentWeeklyProgress
+    val progressRatio = (currentProgress.toFloat() / mission.target.toFloat()).coerceIn(0f, 1f)
 
     val badges = pomodoroViewModel.unlockedBadges
+    val unitStr = if (mission.isMinutes) "phút" else "phiên"
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         // MỤC TIÊU TUẦN
-        Text("Mục tiêu Tuần", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("Nhiệm Vụ Tuần Này", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(8.dp))
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0))
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
+                // Tên nhiệm vụ và mô tả
+                Text("🌟 ${mission.title}", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = Color(0xFFE65100))
+                Text(mission.desc, fontSize = 13.sp, color = Color(0xFFF57C00), modifier = Modifier.padding(top = 2.dp, bottom = 12.dp))
+
+                // Tiến độ
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Hoàn thành: $currentProgress / $weeklyGoal phiên", fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+                    Text("Tiến độ: $currentProgress / ${mission.target} $unitStr", fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
                     Text("${(progressRatio * 100).toInt()}%", fontWeight = FontWeight.ExtraBold, color = Color(0xFFF57C00))
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -196,8 +203,8 @@ fun GamificationView(pomodoroViewModel: PomodoroViewModel) {
                     trackColor = Color(0xFFFFE0B2),
                     strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
-                if (currentProgress >= weeklyGoal) {
-                    Text("🎉 Bạn đã đạt mục tiêu tuần này! Tuyệt vời!", fontSize = 12.sp, color = Color(0xFF2E7D32), modifier = Modifier.padding(top = 8.dp))
+                if (currentProgress >= mission.target) {
+                    Text("🎉 Nhiệm vụ hoàn tất! Bạn đã nhận huy hiệu Tuần Lễ Vàng!", fontSize = 12.sp, color = Color(0xFF2E7D32), modifier = Modifier.padding(top = 8.dp))
                 }
             }
         }
@@ -223,7 +230,6 @@ fun GamificationView(pomodoroViewModel: PomodoroViewModel) {
         }
     }
 }
-
 @Composable
 fun BadgeItem(badge: PomodoroViewModel.PomodoroBadge) {
     val bgColor = if (badge.isUnlocked) Color(0xFFE3F2FD) else Color(0xFFF5F5F5)
