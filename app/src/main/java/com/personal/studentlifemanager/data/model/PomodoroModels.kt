@@ -32,3 +32,9 @@ data class PomodoroRecord(
     var taskName: String = ""
 
 )
+
+enum class PomodoroPhase(val title: String) {
+    FOCUS("TẬP TRUNG"),
+    SHORT_BREAK("NGHỈ NGẮN"),
+    LONG_BREAK("NGHỈ DÀI")
+}
