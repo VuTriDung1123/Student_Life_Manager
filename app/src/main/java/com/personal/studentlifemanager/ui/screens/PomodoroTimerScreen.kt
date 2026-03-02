@@ -1,10 +1,8 @@
 package com.personal.studentlifemanager.ui.screens
 
 import android.app.Activity
-import android.content.Context
-import android.content.Intent
 import android.media.MediaPlayer
-import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -29,30 +27,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.personal.studentlifemanager.R
 import com.personal.studentlifemanager.data.model.PomodoroConfig
-import com.personal.studentlifemanager.data.model.PomodoroPhase // Lấy từ thư mục model
+import com.personal.studentlifemanager.data.model.PomodoroPhase
 import com.personal.studentlifemanager.service.PomodoroService
-
-// 🔥 FIX LỖI "getValue": Thêm 2 thư viện này để đọc dữ liệu từ StateFlow của Service
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-
-// 🔥 1. HÀM TÀI XẾ: Chuyên chở lệnh từ Nút bấm xuống Service chạy ngầm
-fun sendPomodoroCommand(context: Context, action: String, config: PomodoroConfig? = null, taskName: String? = null) {
-    val intent = Intent(context, PomodoroService::class.java).apply {
-        this.action = action
-        if (config != null) {
-            putExtra("focus", config.focusTime)
-        }
-        if (taskName != null) {
-            putExtra("taskName", taskName)
-        }
-    }
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        context.startForegroundService(intent)
-    } else {
-        context.startService(intent)
-    }
-}
 
 @Composable
 fun PomodoroTimerScreen(
@@ -64,19 +40,26 @@ fun PomodoroTimerScreen(
     val context = LocalContext.current
     val view = LocalView.current
 
-    // 🔥 2. CẮM ỐNG HÚT DỮ LIỆU: Đọc trực tiếp từ Service
     val timeLeft by PomodoroService.timeLeft.collectAsState()
     val isRunning by PomodoroService.isRunning.collectAsState()
     val currentPhase by PomodoroService.currentPhase.collectAsState()
     val currentSession by PomodoroService.currentSession.collectAsState()
+    val isFinished by PomodoroService.isFinished.collectAsState() // Đọc tín hiệu báo Xong
 
     var showExitDialog by remember { mutableStateOf(false) }
 
-    // Bắt đầu Service khi vừa mở màn hình lên (Nếu chưa chạy)
-    LaunchedEffect(Unit) {
-        if (!isRunning && timeLeft == 0L) {
-            sendPomodoroCommand(context, "ACTION_START", config, taskName)
+    // 🔥 TỰ ĐỘNG ĐÁ VĂNG RA NGOÀI KHI HOÀN THÀNH LONG BREAK
+    LaunchedEffect(isFinished) {
+        if (isFinished) {
+            PomodoroService.isFinished.value = false // Reset lại
+            onBack()
         }
+    }
+
+    // CHỐNG XAO NHÃNG: CHẶN VUỐT LUI
+    BackHandler(enabled = (timeLeft > 0L)) {
+        PomodoroService.sendCommand(context, "ACTION_PAUSE")
+        showExitDialog = true
     }
 
     var bgmSelection by remember { mutableIntStateOf(0) }
@@ -104,10 +87,7 @@ fun PomodoroTimerScreen(
         }
     }
 
-    val minutes = timeLeft / 60
-    val seconds = timeLeft % 60
-    val timeString = String.format("%02d:%02d", minutes, seconds)
-
+    val timeString = String.format("%02d:%02d", timeLeft / 60, timeLeft % 60)
     val bgColor = when(currentPhase) {
         PomodoroPhase.FOCUS -> MaterialTheme.colorScheme.background
         PomodoroPhase.SHORT_BREAK -> Color(0xFFE8F5E9)
@@ -140,7 +120,7 @@ fun PomodoroTimerScreen(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = {
-                        sendPomodoroCommand(context, "ACTION_PAUSE")
+                        PomodoroService.sendCommand(context, "ACTION_PAUSE")
                         showExitDialog = true
                     },
                     modifier = Modifier.size(64.dp).background(Color(0xFFEEEEEE), RoundedCornerShape(16.dp))
@@ -150,8 +130,8 @@ fun PomodoroTimerScreen(
 
                 IconButton(
                     onClick = {
-                        if (isRunning) sendPomodoroCommand(context, "ACTION_PAUSE")
-                        else sendPomodoroCommand(context, "ACTION_RESUME")
+                        if (isRunning) PomodoroService.sendCommand(context, "ACTION_PAUSE")
+                        else PomodoroService.sendCommand(context, "ACTION_RESUME")
                     },
                     modifier = Modifier.size(80.dp).background(Color(0xFF212121), CircleShape)
                 ) { Icon(imageVector = if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Tạm dừng", tint = Color.White, modifier = Modifier.size(40.dp)) }
@@ -163,7 +143,7 @@ fun PomodoroTimerScreen(
         AlertDialog(
             onDismissRequest = {
                 showExitDialog = false
-                sendPomodoroCommand(context, "ACTION_RESUME")
+                PomodoroService.sendCommand(context, "ACTION_RESUME")
             },
             title = { Text("Dừng Pomodoro?", fontWeight = FontWeight.Bold) },
             text = { Text("Bạn muốn làm gì với phiên này?") },
@@ -171,23 +151,23 @@ fun PomodoroTimerScreen(
                 Button(
                     onClick = {
                         showExitDialog = false
-                        sendPomodoroCommand(context, "ACTION_STOP")
+                        PomodoroService.sendCommand(context, "ACTION_ABORT")
                         onBack()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))
-                ) { Text("Bỏ cuộc", color = Color.White, fontSize = 12.sp) }
+                ) { Text("Bỏ cuộc (Lưu thất bại)", color = Color.White, fontSize = 12.sp) }
             },
             dismissButton = {
                 Row {
                     TextButton(onClick = {
                         showExitDialog = false
-                        sendPomodoroCommand(context, "ACTION_STOP")
+                        PomodoroService.sendCommand(context, "ACTION_STOP")
                         onBack()
                     }) { Text("Hủy (Không lưu)", color = Color.Gray, fontSize = 12.sp) }
 
                     TextButton(onClick = {
                         showExitDialog = false
-                        sendPomodoroCommand(context, "ACTION_RESUME")
+                        PomodoroService.sendCommand(context, "ACTION_RESUME")
                     }) { Text("Tiếp tục", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp) }
                 }
             }

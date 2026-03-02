@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.personal.studentlifemanager.data.model.PomodoroConfig
 import com.personal.studentlifemanager.data.model.PomodoroRecord
+import com.personal.studentlifemanager.service.PomodoroService
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -57,6 +58,13 @@ fun PomodoroScreen(
     var showSettingsDialog by remember { mutableStateOf(false) }
 
     val currentDateRecords = pomodoroViewModel.currentDateRecords
+
+    val activeTimeLeft by PomodoroService.timeLeft.collectAsState()
+    LaunchedEffect(Unit) {
+        if (PomodoroService.timeLeft.value > 0L) {
+            onNavigateToTimer(config, PomodoroService.currentTaskName)
+        }
+    }
 
     // Bắt buộc tải lại dữ liệu khi quay lại màn hình
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -170,7 +178,10 @@ fun PomodoroScreen(
                         }
 
                         Button(
-                            onClick = { onNavigateToTimer(config, taskNameInput) },
+                            onClick = {
+                                PomodoroService.sendCommand(context, "ACTION_START", config, taskNameInput)
+                                onNavigateToTimer(config, taskNameInput)
+                            },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.height(50.dp).width(120.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57C00))
