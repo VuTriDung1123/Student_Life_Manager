@@ -1,6 +1,9 @@
 package com.personal.studentlifemanager.ui.screens
 
+import android.app.TimePickerDialog
 import android.content.Context
+import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -9,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
@@ -26,12 +30,17 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.work.Data
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.personal.studentlifemanager.data.model.PomodoroConfig
 import com.personal.studentlifemanager.data.model.PomodoroRecord
 import com.personal.studentlifemanager.service.PomodoroService
+import com.personal.studentlifemanager.worker.PomodoroReminderWorker
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,7 +82,6 @@ fun PomodoroScreen(
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 pomodoroViewModel.fetchRecordsForSelectedDate()
-                // Gắn thêm hàm tải dữ liệu Analytics nếu cần
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -95,7 +103,6 @@ fun PomodoroScreen(
                         Text("Tuần: ${pomodoroViewModel.weeklyTotalMinutes} phút", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Text("🔥 Chuỗi: ${pomodoroViewModel.currentStreak} ngày", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5722))
                     }
-                    // 🔥 NÚT BÁO CÁO NẰM Ở GÓC PHẢI
                     IconButton(onClick = onNavigateToReport) {
                         Icon(Icons.Default.Assessment, contentDescription = "Báo cáo", tint = MaterialTheme.colorScheme.primary)
                     }
@@ -135,15 +142,54 @@ fun PomodoroScreen(
                         singleLine = true
                     )
 
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        OutlinedButton(
+                    // 🔥 ĐÃ ĐƯA BỘ HẸN GIỜ VÀO ĐÚNG VỊ TRÍ
+                    val calendar = Calendar.getInstance()
+                    val timePickerDialog = TimePickerDialog(
+                        context,
+                        { _, hourOfDay, minute ->
+                            val targetTime = Calendar.getInstance().apply {
+                                set(Calendar.HOUR_OF_DAY, hourOfDay)
+                                set(Calendar.MINUTE, minute)
+                                set(Calendar.SECOND, 0)
+                            }
+                            if (targetTime.before(Calendar.getInstance())) {
+                                targetTime.add(Calendar.DAY_OF_YEAR, 1)
+                            }
+
+                            val delay = targetTime.timeInMillis - System.currentTimeMillis()
+
+                            val inputData = Data.Builder().putString("taskName", taskNameInput.ifBlank { "Tự do" }).build()
+                            val workRequest = OneTimeWorkRequestBuilder<PomodoroReminderWorker>()
+                                .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+                                .setInputData(inputData)
+                                .build()
+
+                            WorkManager.getInstance(context).enqueue(workRequest)
+
+                            val timeStr = String.format("%02d:%02d", hourOfDay, minute)
+                            Toast.makeText(context, "Đã hẹn giờ cày cuốc lúc $timeStr", Toast.LENGTH_SHORT).show()
+                        },
+                        calendar.get(Calendar.HOUR_OF_DAY),
+                        calendar.get(Calendar.MINUTE),
+                        true
+                    )
+
+                    // DÀN 3 NÚT BẤM (Cấu hình, Hẹn giờ, Bắt đầu)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
                             onClick = { showSettingsDialog = true },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.height(50.dp)
+                            modifier = Modifier.background(Color(0xFFEEEEEE), RoundedCornerShape(12.dp)).size(50.dp)
                         ) {
-                            Icon(Icons.Default.Settings, contentDescription = "Cấu hình", modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Cấu hình")
+                            Icon(Icons.Default.Settings, contentDescription = "Cấu hình", tint = Color.Gray)
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconButton(
+                            onClick = { timePickerDialog.show() },
+                            modifier = Modifier.background(Color(0xFFE3F2FD), RoundedCornerShape(12.dp)).size(50.dp)
+                        ) {
+                            Icon(Icons.Default.Alarm, contentDescription = "Lên lịch", tint = Color(0xFF1976D2))
                         }
 
                         Button(
@@ -152,7 +198,7 @@ fun PomodoroScreen(
                                 onNavigateToTimer(config, taskNameInput)
                             },
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.height(50.dp).width(120.dp),
+                            modifier = Modifier.height(50.dp).weight(1f).padding(start = 16.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57C00))
                         ) {
                             Text("Bắt đầu", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -179,7 +225,7 @@ fun PomodoroScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 🔥 3. THỐNG KÊ CƠ BẢN CỦA NGÀY & DANH SÁCH LỊCH SỬ
+            // 3. THỐNG KÊ CƠ BẢN CỦA NGÀY & DANH SÁCH LỊCH SỬ
             val totalCompleted = currentDateRecords.count { it.isCompleted }
             val totalMinutes = currentDateRecords.filter { it.isCompleted }.sumOf { it.actualFocusMinutes }
 
@@ -298,7 +344,8 @@ fun RecordItem(record: PomodoroRecord, pomodoroViewModel: PomodoroViewModel = an
     val statusColor = if (record.isCompleted) Color(0xFF4CAF50) else Color(0xFFF44336)
     val statusIcon = if (record.isCompleted) Icons.Default.CheckCircle else Icons.Default.Cancel
 
-    // 🔥 TẠO CHUỖI CẤU HÌNH POMODORO ĐỂ HIỂN THỊ
+    // ĐÃ XÓA SẠCH TIMEPICKER KHỎI ĐÂY 🚀
+
     val configString = "${record.configFocus}/${record.configShort}/${record.configSessions}/${record.configLong}"
 
     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -308,7 +355,6 @@ fun RecordItem(record: PomodoroRecord, pomodoroViewModel: PomodoroViewModel = an
             Column(modifier = Modifier.weight(1f)) {
                 Text(if (record.taskName.isNotEmpty()) record.taskName else "Tự do", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
 
-                // 🔥 CHÈN THÊM CẤU HÌNH VÀO DÒNG NÀY
                 Text("$timeString ($sessionName) • [Cấu hình: $configString]", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 2.dp))
 
                 Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
