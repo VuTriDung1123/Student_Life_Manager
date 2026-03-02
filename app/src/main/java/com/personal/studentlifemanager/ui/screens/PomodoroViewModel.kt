@@ -1,6 +1,7 @@
 package com.personal.studentlifemanager.ui.screens
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -23,14 +24,18 @@ class PomodoroViewModel : ViewModel() {
     var weeklyTotalMinutes by mutableStateOf(0)
         private set
 
-    // 🔥 THÊM BIẾN QUẢN LÝ STREAK NGÀY
     var currentStreak by mutableStateOf(0)
+        private set
+
+    // 🔥 BIẾN MỚI CHO TRANG BÁO CÁO: Lưu TOÀN BỘ lịch sử (Cả Thành công lẫn Thất bại)
+    var allTimeRecords by mutableStateOf<List<PomodoroRecord>>(emptyList())
         private set
 
     init {
         fetchRecordsForSelectedDate()
         fetchWeeklyTotal()
-        calculateStreak() // Tính streak ngay khi mở app
+        calculateStreak()
+        fetchAllRecordsForReport() // Gọi hàm tải dữ liệu báo cáo
     }
 
     fun changeDate(offsetDays: Int) {
@@ -57,31 +62,22 @@ class PomodoroViewModel : ViewModel() {
             }
     }
 
-    // 🔥 TÍNH TỔNG THỜI GIAN TRONG TUẦN (Đã fix lỗi Index của Firestore)
     private fun fetchWeeklyTotal() {
         val userId = auth.currentUser?.uid ?: return
 
         val startOfWeek = Calendar.getInstance()
-        // Đặt mốc về đầu tuần (thường là Thứ 2 hoặc Chủ Nhật tùy máy)
         startOfWeek.set(Calendar.DAY_OF_WEEK, startOfWeek.firstDayOfWeek)
-        startOfWeek.set(Calendar.HOUR_OF_DAY, 0)
-        startOfWeek.set(Calendar.MINUTE, 0)
-        startOfWeek.set(Calendar.SECOND, 0)
-        startOfWeek.set(Calendar.MILLISECOND, 0)
+        startOfWeek.set(Calendar.HOUR_OF_DAY, 0); startOfWeek.set(Calendar.MINUTE, 0); startOfWeek.set(Calendar.SECOND, 0); startOfWeek.set(Calendar.MILLISECOND, 0)
 
         db.collection("users").document(userId).collection("pomodoro_records")
             .whereGreaterThanOrEqualTo("startTime", startOfWeek.timeInMillis)
-            // BỎ qua lệnh whereEqualTo ở đây để tránh lỗi đòi Composite Index của Firebase
             .get()
             .addOnSuccessListener { snapshot ->
                 val records = snapshot.documents.mapNotNull { it.toObject(PomodoroRecord::class.java) }
-
-                // 🔥 Đem về Kotlin lọc và tính tổng thời gian (Chỉ cộng những phiên Thành công)
                 weeklyTotalMinutes = records.filter { it.isCompleted }.sumOf { it.actualFocusMinutes }
             }
     }
 
-    // 🔥 THUẬT TOÁN TÍNH CHUỖI NGÀY LIÊN TIẾP (STREAK)
     private fun calculateStreak() {
         val userId = auth.currentUser?.uid ?: return
         db.collection("users").document(userId).collection("pomodoro_records")
@@ -89,40 +85,40 @@ class PomodoroViewModel : ViewModel() {
             .get()
             .addOnSuccessListener { snapshot ->
                 val records = snapshot.documents.mapNotNull { it.toObject(PomodoroRecord::class.java) }
-
-                // Gom tất cả các ngày có học thành một tập hợp chuỗi (VD: "2026-61" - Ngày thứ 61 của năm 2026)
-                // Cách này chống lại mọi sai số về mili-giây hay múi giờ
                 val activeDates = records.map {
                     val cal = Calendar.getInstance().apply { timeInMillis = it.startTime }
                     "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
                 }.toSet()
 
                 var streak = 0
-                val checkCal = Calendar.getInstance() // Mốc kiểm tra bắt đầu từ Hôm nay
+                val checkCal = Calendar.getInstance()
                 val todayKey = "${checkCal.get(Calendar.YEAR)}-${checkCal.get(Calendar.DAY_OF_YEAR)}"
 
                 if (activeDates.contains(todayKey)) {
-                    // TRƯỜNG HỢP 1: Hôm nay ĐÃ cày Pomodoro
-                    // -> Bắt đầu đếm từ hôm nay, lùi dần về các ngày trước
                     while (activeDates.contains("${checkCal.get(Calendar.YEAR)}-${checkCal.get(Calendar.DAY_OF_YEAR)}")) {
-                        streak++
-                        checkCal.add(Calendar.DAY_OF_YEAR, -1) // Lùi về 1 ngày
+                        streak++; checkCal.add(Calendar.DAY_OF_YEAR, -1)
                     }
                 } else {
-                    // TRƯỜNG HỢP 2: Hôm nay CHƯA cày Pomodoro
-                    // -> Lùi về hôm qua kiểm tra xem có cày không (Streak được bảo lưu đến hết 23:59 hôm nay)
                     checkCal.add(Calendar.DAY_OF_YEAR, -1)
                     val yesterdayKey = "${checkCal.get(Calendar.YEAR)}-${checkCal.get(Calendar.DAY_OF_YEAR)}"
-
                     if (activeDates.contains(yesterdayKey)) {
                         while (activeDates.contains("${checkCal.get(Calendar.YEAR)}-${checkCal.get(Calendar.DAY_OF_YEAR)}")) {
-                            streak++
-                            checkCal.add(Calendar.DAY_OF_YEAR, -1) // Lùi về 1 ngày
+                            streak++; checkCal.add(Calendar.DAY_OF_YEAR, -1)
                         }
                     }
                 }
-
                 currentStreak = streak
+            }
+    }
+
+    // 🔥 HÀM MỚI: Tải toàn bộ data không phân biệt thành công/thất bại
+    private fun fetchAllRecordsForReport() {
+        val userId = auth.currentUser?.uid ?: return
+        db.collection("users").document(userId).collection("pomodoro_records")
+            .get()
+            .addOnSuccessListener { snapshot ->
+                allTimeRecords = snapshot.documents.mapNotNull { it.toObject(PomodoroRecord::class.java) }
+                calculateGamification()
             }
     }
 
@@ -133,7 +129,8 @@ class PomodoroViewModel : ViewModel() {
         ref.set(record).addOnSuccessListener {
             fetchRecordsForSelectedDate()
             fetchWeeklyTotal()
-            calculateStreak() // Cập nhật lại streak
+            calculateStreak()
+            fetchAllRecordsForReport() // Cập nhật lại kho data báo cáo
         }
     }
 
@@ -143,6 +140,122 @@ class PomodoroViewModel : ViewModel() {
             fetchRecordsForSelectedDate()
             fetchWeeklyTotal()
             calculateStreak()
+            fetchAllRecordsForReport() // Cập nhật lại kho data báo cáo
         }
+    }
+
+    // ==========================================
+    // 🔥 CHIẾN DỊCH 3: GAMIFICATION (THÀNH TỰU & NHIỆM VỤ TUẦN)
+    // ==========================================
+
+    data class PomodoroBadge(val id: Int, val name: String, val desc: String, val icon: String, var isUnlocked: Boolean = false)
+
+    // Cấu trúc của 1 Nhiệm vụ tuần
+    data class WeeklyMission(val id: Int, val title: String, val desc: String, val target: Int, val isMinutes: Boolean)
+
+    // Kho chứa 10 Nhiệm vụ luân phiên
+    private val weeklyMissionsList = listOf(
+        WeeklyMission(0, "Khởi Động Nhẹ Nhàng", "Hoàn thành 10 phiên Pomodoro", 10, false),
+        WeeklyMission(1, "Sức Bền Thời Gian", "Tích lũy 200 phút tập trung", 200, true),
+        WeeklyMission(2, "Chiến Binh Chăm Chỉ", "Hoàn thành 20 phiên Pomodoro", 20, false),
+        WeeklyMission(3, "Thợ Săn Cà Chua", "Tích lũy 400 phút tập trung", 400, true),
+        WeeklyMission(4, "Bứt Phá Giới Hạn", "Hoàn thành 25 phiên Pomodoro", 25, false),
+        WeeklyMission(5, "Tuần Lễ Tập Trung", "Tích lũy 600 phút tập trung", 600, true),
+        WeeklyMission(6, "Duy Trì Phong Độ", "Hoàn thành 15 phiên Pomodoro", 15, false),
+        WeeklyMission(7, "Năng Suất Tối Đa", "Tích lũy 500 phút tập trung", 500, true),
+        WeeklyMission(8, "Cỗ Máy Thời Gian", "Hoàn thành 30 phiên Pomodoro", 30, false),
+        WeeklyMission(9, "Thử Thách Cực Đại", "Tích lũy 800 phút tập trung", 800, true)
+    )
+
+    // Biến lưu nhiệm vụ của tuần hiện tại
+    var currentWeeklyMission by mutableStateOf(weeklyMissionsList[0])
+        private set
+    // Tiến độ hiện tại của nhiệm vụ đó
+    var currentWeeklyProgress by mutableIntStateOf(0)
+        private set
+
+    var unlockedBadges by mutableStateOf<List<PomodoroBadge>>(emptyList())
+        private set
+
+    fun calculateGamification() {
+        val successRecords = allTimeRecords.filter { it.isCompleted }
+        val failRecords = allTimeRecords.filter { !it.isCompleted }
+
+        val totalSuccess = successRecords.size
+        val totalMins = successRecords.sumOf { it.actualFocusMinutes }
+
+        // 🔥 LẤY NHIỆM VỤ CỦA TUẦN NÀY (Dựa vào tuần thứ mấy trong năm)
+        val weekOfYear = Calendar.getInstance().get(Calendar.WEEK_OF_YEAR)
+        currentWeeklyMission = weeklyMissionsList[weekOfYear % weeklyMissionsList.size]
+
+        // 🔥 TÍNH TIẾN ĐỘ CHO NHIỆM VỤ TUẦN
+        val startOfWeek = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+        }
+        val recordsThisWeek = successRecords.filter { it.startTime >= startOfWeek.timeInMillis }
+
+        currentWeeklyProgress = if (currentWeeklyMission.isMinutes) {
+            recordsThisWeek.sumOf { it.actualFocusMinutes } // Nhiệm vụ yêu cầu Phút
+        } else {
+            recordsThisWeek.size // Nhiệm vụ yêu cầu Số phiên
+        }
+
+        // Nhận diện Giờ giấc & Các điều kiện đặc biệt
+        val hasNightOwl = successRecords.any { Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY) in 0..3 }
+        val hasEarlyBird = successRecords.any { Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY) in 4..6 }
+        val hasNoon = successRecords.any { Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY) in 11..13 }
+
+        val maxSessionsInOneDay = successRecords.groupBy {
+            val cal = Calendar.getInstance().apply { timeInMillis = it.startTime }
+            "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
+        }.maxOfOrNull { it.value.size } ?: 0
+
+        val hasLongFocus = successRecords.any { it.actualFocusMinutes >= 50 }
+        val hasSpeedFocus = successRecords.any { it.actualFocusMinutes in 1..15 }
+        val weekendSessions = successRecords.count {
+            val day = Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.DAY_OF_WEEK)
+            day == Calendar.SATURDAY || day == Calendar.SUNDAY
+        }
+        val namedTasksCount = successRecords.count { it.taskName.isNotBlank() && it.taskName != "Tự do" }
+
+        // KHỞI TẠO 22 HUY HIỆU
+        val badges = mutableListOf(
+            PomodoroBadge(1, "Tân Binh", "Hoàn thành phiên đầu tiên", "🌱", totalSuccess >= 1),
+            PomodoroBadge(2, "Thợ Săn", "Hoàn thành 10 phiên", "🏹", totalSuccess >= 10),
+            PomodoroBadge(3, "Tinh Anh", "Hoàn thành 50 phiên", "⚔️", totalSuccess >= 50),
+            PomodoroBadge(4, "Huyền Thoại", "Hoàn thành 100 phiên", "👑", totalSuccess >= 100),
+            PomodoroBadge(5, "Thần Thoại", "Hoàn thành 500 phiên", "🐉", totalSuccess >= 500),
+
+            PomodoroBadge(6, "Cú Đêm", "Học từ 0h - 4h sáng", "🦉", hasNightOwl),
+            PomodoroBadge(7, "Bình Minh", "Học từ 4h - 6h sáng", "🌅", hasEarlyBird),
+            PomodoroBadge(8, "Xuyên Trưa", "Học từ 11h - 13h trưa", "☀️", hasNoon),
+
+            PomodoroBadge(9, "Combo x4", "4 phiên trong 1 ngày", "🔥", maxSessionsInOneDay >= 4),
+            PomodoroBadge(10, "Combo Bạo Kích", "8 phiên trong 1 ngày", "💥", maxSessionsInOneDay >= 8),
+
+            PomodoroBadge(11, "Lửa Nhỏ", "Streak 3 ngày liên tiếp", "🕯️", currentStreak >= 3),
+            PomodoroBadge(12, "Lửa Thiêng", "Streak 7 ngày liên tiếp", "🏕️", currentStreak >= 7),
+            PomodoroBadge(13, "Bất Diệt", "Streak 30 ngày liên tiếp", "🌋", currentStreak >= 30),
+
+            // 🔥 NÂNG CẤP HUY HIỆU TUẦN LỄ VÀNG: BÁM THEO NHIỆM VỤ ĐỘNG CỦA TUẦN NÀY
+            PomodoroBadge(14, "Tuần Lễ Vàng", "Hoàn thành Nhiệm vụ Tuần này", "🏆", currentWeeklyProgress >= currentWeeklyMission.target),
+
+            PomodoroBadge(15, "Nhịp Điệu Chậm", "1 phiên dài >= 50 phút", "🎵", hasLongFocus),
+            PomodoroBadge(16, "Tốc Độ Ánh Sáng", "1 phiên chớp nhoáng <= 15 phút", "⚡", hasSpeedFocus),
+
+            PomodoroBadge(17, "Khối Sinh Tồn", "Cày 10 phiên vào Thứ 7/CN", "🔲", weekendSessions >= 10),
+            PomodoroBadge(18, "Nhà Lên Kế Hoạch", "Ghi tên Task cho 20 phiên", "📝", namedTasksCount >= 20),
+            PomodoroBadge(19, "Không Bỏ Cuộc", "Có thất bại nhưng vẫn đạt 10 thành công", "❤️‍🩹", failRecords.isNotEmpty() && totalSuccess >= 10),
+
+            PomodoroBadge(20, "Gacha May Mắn", "Đạt tổng số 777 phút", "🎰", totalMins >= 777),
+            PomodoroBadge(21, "Cỗ Máy Thời Gian", "Tích lũy 1000 phút", "⏳", totalMins >= 1000),
+            PomodoroBadge(22, "Siêu Việt", "Tích lũy 5000 phút", "🌌", totalMins >= 5000)
+        )
+
+        val unlockedCount = badges.count { it.isUnlocked }
+        badges.add(PomodoroBadge(23, "Kẻ Thống Trị Vạn Vật", "Mở khóa 22 huy hiệu trên", "👁️‍🗨️", unlockedCount == 22))
+
+        unlockedBadges = badges
     }
 }

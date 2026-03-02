@@ -31,14 +31,16 @@ import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import com.personal.studentlifemanager.ui.screens.PomodoroReportScreen
 import java.net.URLEncoder
 import java.net.URLDecoder
 
 class MainActivity : FragmentActivity() {
 
     // Lắng nghe kết quả xin quyền thông báo
-    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-        if (isGranted) scheduleDailyReminder()
+    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+        val notifGranted = permissions[Manifest.permission.POST_NOTIFICATIONS] ?: false
+        if (notifGranted) scheduleDailyReminder()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,13 +49,26 @@ class MainActivity : FragmentActivity() {
 
         // 🔥 XIN QUYỀN VÀ CHẠY WORKMANAGER (Thêm vào đây)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                scheduleDailyReminder()
+            val permissionsToRequest = mutableListOf<String>()
+
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.READ_PHONE_STATE)
+            }
+
+            if (permissionsToRequest.isNotEmpty()) {
+                requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
             } else {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                scheduleDailyReminder()
             }
         } else {
-            scheduleDailyReminder() // Android cũ không cần xin quyền
+            scheduleDailyReminder() // Android cũ
+            // Xin quyền nghe gọi cho Android cũ
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_PHONE_STATE))
+            }
         }
 
         setContent {
@@ -108,20 +123,25 @@ class MainActivity : FragmentActivity() {
                         )
                     }
 
-                    // MÀN HÌNH POMODORO
+
                     // 🔥 MÀN HÌNH CHÍNH POMODORO
                     composable("pomodoro") {
                         PomodoroScreen(
                             onBack = { navController.popBackStack() },
                             onNavigateToTimer = { config, taskName ->
-                                // Mã hóa chữ (tránh lỗi sập app nếu có dấu cách)
-                                val safeTaskName = if (taskName.isBlank()) "Tự do" else taskName
+
+                                val safeTaskName = taskName.ifBlank { "Tự do" }
                                 val encodedTask = URLEncoder.encode(safeTaskName, "UTF-8")
 
                                 navController.navigate("pomodoro_timer/${config.focusTime}/${config.shortBreak}/${config.sessionsCount}/${config.longBreak}?taskName=$encodedTask")
+                            },
+
+                            onNavigateToReport = {
+                                navController.navigate("report")
                             }
                         )
                     }
+
 
                     // 🔥 MÀN HÌNH ĐỒNG HỒ ĐẾM NGƯỢC (Đã sửa lỗi thiếu taskName)
                     composable(
@@ -174,6 +194,11 @@ class MainActivity : FragmentActivity() {
                     // 7. Màn hình Giao dịch định kỳ
                     composable("recurring") {
                         RecurringScreen(onBack = { navController.popBackStack() })
+                    }
+
+                    //8. Màn hình báo cáo
+                    composable("report") {
+                        PomodoroReportScreen(onBack = { navController.popBackStack() })
                     }
                 }
             }
