@@ -37,8 +37,9 @@ import java.net.URLDecoder
 class MainActivity : FragmentActivity() {
 
     // Lắng nghe kết quả xin quyền thông báo
-    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-        if (isGranted) scheduleDailyReminder()
+    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+        val notifGranted = permissions[Manifest.permission.POST_NOTIFICATIONS] ?: false
+        if (notifGranted) scheduleDailyReminder()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,13 +48,26 @@ class MainActivity : FragmentActivity() {
 
         // 🔥 XIN QUYỀN VÀ CHẠY WORKMANAGER (Thêm vào đây)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                scheduleDailyReminder()
+            val permissionsToRequest = mutableListOf<String>()
+
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.READ_PHONE_STATE)
+            }
+
+            if (permissionsToRequest.isNotEmpty()) {
+                requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
             } else {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                scheduleDailyReminder()
             }
         } else {
-            scheduleDailyReminder() // Android cũ không cần xin quyền
+            scheduleDailyReminder() // Android cũ
+            // Xin quyền nghe gọi cho Android cũ
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_PHONE_STATE))
+            }
         }
 
         setContent {

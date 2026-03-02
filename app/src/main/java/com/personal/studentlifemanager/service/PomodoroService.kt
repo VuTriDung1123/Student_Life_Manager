@@ -4,13 +4,17 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Build
 import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.telephony.TelephonyManager
 import androidx.core.app.NotificationCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -23,16 +27,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 class PomodoroService : Service() {
 
-    // 🔥 TRẠM PHÁT SÓNG & TỔNG ĐÀI NHẬN LỆNH
     companion object {
         val timeLeft = MutableStateFlow(0L)
         val isRunning = MutableStateFlow(false)
         val currentPhase = MutableStateFlow(PomodoroPhase.FOCUS)
         val currentSession = MutableStateFlow(1)
-        val isFinished = MutableStateFlow(false) // Tín hiệu báo đã đếm xong toàn bộ
+        val isFinished = MutableStateFlow(false)
         var currentTaskName = "Tự do"
 
-        // Hàm gọi chung cho toàn app
         fun sendCommand(context: Context, action: String, config: PomodoroConfig? = null, taskName: String? = null) {
             val intent = Intent(context, PomodoroService::class.java).apply {
                 this.action = action
@@ -68,9 +70,56 @@ class PomodoroService : Service() {
     private val CHANNEL_ID = "pomodoro_foreground_channel"
     private val NOTIFICATION_ID = 1
 
+    private var wasPlayingBeforeCall = false
+
+    // 🔥 1. BỘ NHẬN DIỆN CUỘC GỌI TỪ SIM (Telephony)
+    private val callReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
+                val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
+                when (state) {
+                    TelephonyManager.EXTRA_STATE_RINGING, TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                        if (isRunning.value) { wasPlayingBeforeCall = true; pauseTimer() }
+                    }
+                    TelephonyManager.EXTRA_STATE_IDLE -> {
+                        if (wasPlayingBeforeCall) { wasPlayingBeforeCall = false; startTimer() }
+                    }
+                }
+            }
+        }
+    }
+
+    private lateinit var audioManager: AudioManager
+
+    // 🔥 2. BỘ NHẬN DIỆN ZALO/MESSENGER/YOUTUBE/TIKTOK (Audio Focus)
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // Có app khác (Zalo, Messenger) cướp quyền phát tiếng để đổ chuông -> Tự Pause
+                if (isRunning.value) {
+                    wasPlayingBeforeCall = true
+                    pauseTimer()
+                }
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // App kia cúp máy, trả lại quyền âm thanh -> Tự Resume
+                if (wasPlayingBeforeCall) {
+                    wasPlayingBeforeCall = false
+                    startTimer()
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // Đăng ký bắt sóng SIM
+        registerReceiver(callReceiver, IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED))
+        // Khởi tạo Audio Manager để bắt sóng Zalo/Messenger
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -89,7 +138,7 @@ class PomodoroService : Service() {
                 currentPhase.value = PomodoroPhase.FOCUS
                 currentSession.value = 1
                 focusStartTime = System.currentTimeMillis()
-                isFinished.value = false // Đặt lại cờ
+                isFinished.value = false
 
                 startForegroundService()
                 startTimer()
@@ -110,9 +159,13 @@ class PomodoroService : Service() {
         startForeground(NOTIFICATION_ID, notification)
     }
 
+    @Suppress("DEPRECATION")
     private fun startTimer() {
         isRunning.value = true
         timerJob?.cancel()
+
+        // 🔥 Xin quyền âm thanh để làm mồi nhử bắt Zalo/Messenger
+        audioManager.requestAudioFocus(audioFocusChangeListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
 
         timerJob = serviceScope.launch {
             while (isRunning.value && timeLeft.value > 0) {
@@ -156,7 +209,7 @@ class PomodoroService : Service() {
                 isRunning.value = false
                 MediaPlayer.create(this, R.raw.ending_effect)?.start()
                 stopTimer()
-                isFinished.value = true // 🔥 ĐÃ XONG: Ra lệnh cho giao diện đóng màn hình
+                isFinished.value = true
             }
         }
     }
@@ -192,10 +245,15 @@ class PomodoroService : Service() {
         updateNotification(formatTime(timeLeft.value), "Đang tạm dừng: $currentTaskName")
     }
 
+    @Suppress("DEPRECATION")
     private fun stopTimer() {
         isRunning.value = false
         timerJob?.cancel()
-        timeLeft.value = 0L // Trả đồng hồ về 0
+        timeLeft.value = 0L
+
+        // Trả lại quyền âm thanh
+        audioManager.abandonAudioFocus(audioFocusChangeListener)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -204,7 +262,6 @@ class PomodoroService : Service() {
         stopSelf()
     }
 
-    // Các hàm còn lại giữ nguyên...
     private fun updateNotification(timeStr: String = formatTime(timeLeft.value), content: String = "Đang ${currentPhase.value.title.lowercase()}: $currentTaskName") {
         val notification = createNotification(timeStr, content)
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -250,5 +307,12 @@ class PomodoroService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-    override fun onDestroy() { super.onDestroy(); serviceScope.cancel() }
+
+    @Suppress("DEPRECATION")
+    override fun onDestroy() {
+        super.onDestroy()
+        serviceScope.cancel()
+        unregisterReceiver(callReceiver)
+        audioManager.abandonAudioFocus(audioFocusChangeListener)
+    }
 }
