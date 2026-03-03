@@ -225,16 +225,40 @@ fun PomodoroScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 3. THỐNG KÊ CƠ BẢN CỦA NGÀY & DANH SÁCH LỊCH SỬ
+            // 🔥 4. THỐNG KÊ CƠ BẢN CỦA NGÀY & ĐIỂM NĂNG SUẤT
             val totalCompleted = currentDateRecords.count { it.isCompleted }
             val totalMinutes = currentDateRecords.filter { it.isCompleted }.sumOf { it.actualFocusMinutes }
+            val score = pomodoroViewModel.productivityScore // Lấy điểm năng suất
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Bottom
             ) {
-                Text("Lịch sử phiên", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Lịch sử phiên", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Hiển thị Điểm Năng Suất (Màu sắc thay đổi theo điểm)
+                    val scoreColor = when {
+                        score >= 80 -> Color(0xFF4CAF50) // Xanh lá: Xuất sắc
+                        score >= 50 -> Color(0xFFFF9800) // Cam: Khá
+                        else -> Color(0xFFF44336) // Đỏ: Cần cố gắng
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = scoreColor.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            "⚡ Điểm: $score/100",
+                            color = scoreColor,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
                 Text(
                     text = "$totalCompleted phiên • $totalMinutes phút",
                     fontSize = 13.sp,

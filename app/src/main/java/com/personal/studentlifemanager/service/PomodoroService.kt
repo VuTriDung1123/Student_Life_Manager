@@ -214,6 +214,7 @@ class PomodoroService : Service() {
         }
     }
 
+    // LƯU TRỰC TIẾP LÊN FIREBASE FIRESTORE
     private fun saveSessionToDb(isSuccess: Boolean) {
         val auth = FirebaseAuth.getInstance()
         val userId = auth.currentUser?.uid ?: return
@@ -223,6 +224,7 @@ class PomodoroService : Service() {
         val actualMinutes = ((endTime - focusStartTime) / 60000).toInt()
 
         val record = PomodoroRecord(
+            // ... (Giữ nguyên các tham số cũ của bạn)
             startTime = focusStartTime,
             endTime = endTime,
             configFocus = configFocus,
@@ -236,7 +238,33 @@ class PomodoroService : Service() {
 
         val ref = db.collection("users").document(userId).collection("pomodoro_records").document()
         record.id = ref.id
-        ref.set(record)
+        ref.set(record).addOnSuccessListener {
+            // 🔥 CHIẾN DỊCH 5: NẾU THÀNH CÔNG, TỰ ĐỘNG SYNC SANG HABIT MODULE
+            if (isSuccess && currentTaskName.isNotBlank() && currentTaskName != "Tự do") {
+                syncHabitProgress(userId, db, currentTaskName)
+            }
+        }
+    }
+
+    // 🔥 HÀM TỰ ĐỘNG ĐÁNH DẤU HOÀN THÀNH HABIT (Chạy ngầm không cần mở app)
+    private fun syncHabitProgress(userId: String, db: FirebaseFirestore, habitName: String) {
+        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        val habitsRef = db.collection("users").document(userId).collection("habits")
+
+        // Tìm xem có Habit nào trùng tên với Task của Pomodoro không
+        habitsRef.whereEqualTo("name", habitName).get().addOnSuccessListener { snapshot ->
+            if (!snapshot.isEmpty) {
+                val habitDoc = snapshot.documents[0]
+                val habitId = habitDoc.id
+
+                // Cập nhật lịch sử của Habit đó (Tick Done cho ngày hôm nay)
+                val updateData = mapOf(
+                    "history.$todayStr" to true, // Đánh dấu ngày hôm nay là True (Đã làm)
+                    "lastCompleted" to System.currentTimeMillis()
+                )
+                habitsRef.document(habitId).update(updateData)
+            }
+        }
     }
 
     private fun pauseTimer() {
