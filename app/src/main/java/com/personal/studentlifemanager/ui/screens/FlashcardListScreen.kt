@@ -28,12 +28,12 @@ fun FlashcardListScreen(
     deckId: String,
     deckName: String,
     onBack: () -> Unit,
+    onNavigateToStudy: (String, String) -> Unit, // 🔥 1. THÊM THAM SỐ NÀY
     flashcardViewModel: FlashcardViewModel = viewModel()
 ) {
     var showDialog by remember { mutableStateOf(false) }
     var editingCard by remember { mutableStateOf<Flashcard?>(null) }
 
-    // Gọi tải dữ liệu thẻ khi màn hình được mở
     LaunchedEffect(deckId) {
         flashcardViewModel.fetchCards(deckId)
     }
@@ -41,7 +41,7 @@ fun FlashcardListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(deckName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = { Text(deckName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
         },
@@ -56,13 +56,25 @@ fun FlashcardListScreen(
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             val cards = flashcardViewModel.cards
 
+            // 🔥 2. NÚT HỌC THẺ TO BỰ DÀNH CHO BẠN
+            if (cards.isNotEmpty()) {
+                Button(
+                    onClick = { onNavigateToStudy(deckId, deckName) },
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text("🚀 HỌC BỘ THẺ NÀY", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
             if (cards.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Text("Bộ thẻ đang trống. Thêm từ vựng ngay nào! 🚀", color = Color.Gray)
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    item { Spacer(modifier = Modifier.height(8.dp)) }
                     items(cards) { card ->
                         CardItem(
                             card = card,
