@@ -28,7 +28,8 @@ fun FlashcardListScreen(
     deckId: String,
     deckName: String,
     onBack: () -> Unit,
-    onNavigateToStudy: (String, String) -> Unit, // 🔥 1. THÊM THAM SỐ NÀY
+    onNavigateToStudy: (String, String) -> Unit,
+    onNavigateToQuiz: (String, String) -> Unit,
     flashcardViewModel: FlashcardViewModel = viewModel()
 ) {
     var showDialog by remember { mutableStateOf(false) }
@@ -67,6 +68,18 @@ fun FlashcardListScreen(
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Text("🚀 HỌC BỘ THẺ NÀY", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 🔥 NÚT KIỂM TRA TRẮC NGHIỆM
+                val canQuiz = cards.size >= 4
+                Button(
+                    onClick = { if (canQuiz) onNavigateToQuiz(deckId, deckName) },
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (canQuiz) Color(0xFF9C27B0) else Color.LightGray),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text(if (canQuiz) "🎯 KIỂM TRA KIẾN THỨC" else "🎯 KIỂM TRA (Cần ít nhất 4 thẻ)", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }

@@ -171,4 +171,65 @@ class FlashcardViewModel : ViewModel() {
 
         db.collection("users").document(userId).collection("flashcards").document(card.id).set(updatedCard)
     }
+
+    // ==========================================
+    // 🔥 KHU VỰC KIỂM TRA TRẮC NGHIỆM (QUIZ MODE)
+    // ==========================================
+
+    data class QuizQuestion(
+        val questionText: String,
+        val correctAnswer: String,
+        val options: List<String>
+    )
+
+    var quizQuestions by mutableStateOf<List<QuizQuestion>>(emptyList())
+        private set
+    var quizCorrectCount by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    var quizWrongCount by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+
+    fun generateQuiz() {
+        if (cards.size < 4) return // Phải có ít nhất 4 thẻ mới chơi trắc nghiệm được
+
+        val questions = mutableListOf<QuizQuestion>()
+
+        // Đảo lộn thứ tự thẻ để tạo bài kiểm tra ngẫu nhiên
+        cards.shuffled().forEach { card ->
+            // Tung đồng xu: 50% câu hỏi là Mặt trước, 50% câu hỏi là Mặt sau
+            val isFrontQuestion = Math.random() > 0.5
+
+            val questionText = if (isFrontQuestion) card.frontText else card.backText
+            val correctAnswer = if (isFrontQuestion) card.backText else card.frontText
+
+            // Đi tìm 3 đáp án sai từ các thẻ KHÁC trong bộ
+            var wrongAnswers = cards.filter { it.id != card.id }
+                .map { if (isFrontQuestion) it.backText else it.frontText }
+                .distinct() // Lọc trùng lặp
+                .shuffled()
+                .take(3)
+
+            // Đề phòng trường hợp thẻ ít nội dung bị trùng, thiếu đáp án thì đắp thêm cho đủ 3
+            var padIndex = 1
+            while (wrongAnswers.size < 3) {
+                val padStr = "Đáp án khác $padIndex"
+                if (!wrongAnswers.contains(padStr) && padStr != correctAnswer) {
+                    wrongAnswers = wrongAnswers + padStr
+                }
+                padIndex++
+            }
+
+            // Gộp 1 đúng + 3 sai và xào bài lại lần nữa
+            val finalOptions = (wrongAnswers + correctAnswer).shuffled()
+            questions.add(QuizQuestion(questionText, correctAnswer, finalOptions))
+        }
+
+        quizQuestions = questions
+        quizCorrectCount = 0
+        quizWrongCount = 0
+    }
+
+    fun recordQuizAnswer(isCorrect: Boolean) {
+        if (isCorrect) quizCorrectCount++ else quizWrongCount++
+    }
 }
