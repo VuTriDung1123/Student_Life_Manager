@@ -56,8 +56,23 @@ fun PomodoroTimerScreen(
         }
     }
 
-    // CHỐNG XAO NHÃNG: CHẶN VUỐT LUI
+    /// 🔥 LUẬT MỚI: BẤT KỂ CHẾ ĐỘ NÀO, CỨ THOÁT APP LÀ HỦY PHIÊN
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            // BỎ ĐIỀU KIỆN HARDCORE MODE. Cứ ON_STOP (ẩn màn hình) lúc đang Tập Trung là chết!
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && currentPhase == PomodoroPhase.FOCUS) {
+                PomodoroService.sendCommand(context, "ACTION_ABORT")
+                onBack()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Chặn phím Back
     BackHandler(enabled = (timeLeft > 0L)) {
+        // Cứ vuốt Back là hiện hộp thoại Bỏ cuộc
         PomodoroService.sendCommand(context, "ACTION_PAUSE")
         showExitDialog = true
     }
@@ -92,6 +107,12 @@ fun PomodoroTimerScreen(
         PomodoroPhase.FOCUS -> MaterialTheme.colorScheme.background
         PomodoroPhase.SHORT_BREAK -> Color(0xFFE8F5E9)
         PomodoroPhase.LONG_BREAK -> Color(0xFFE3F2FD)
+    }
+
+    DisposableEffect(Unit) {
+        val window = (context as Activity).window
+        if (config.keepScreenOn) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(bgColor).padding(24.dp), contentAlignment = Alignment.Center) {

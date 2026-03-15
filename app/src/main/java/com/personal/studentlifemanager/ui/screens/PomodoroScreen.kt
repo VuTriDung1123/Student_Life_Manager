@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -60,7 +61,10 @@ fun PomodoroScreen(
                 shortBreak = sharedPreferences.getInt("short_break", 5),
                 sessionsCount = sharedPreferences.getInt("sessions_count", 4),
                 longBreak = sharedPreferences.getInt("long_break", 15),
-                autoStart = sharedPreferences.getBoolean("auto_start", true)
+                autoStart = sharedPreferences.getBoolean("auto_start", true),
+                soundEnabled = sharedPreferences.getBoolean("sound_enabled", true),
+                keepScreenOn = sharedPreferences.getBoolean("keep_screen_on", true),
+                hardcoreMode = sharedPreferences.getBoolean("hardcore_mode", false)
             )
         )
     }
@@ -225,16 +229,40 @@ fun PomodoroScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 3. THỐNG KÊ CƠ BẢN CỦA NGÀY & DANH SÁCH LỊCH SỬ
+            // 🔥 4. THỐNG KÊ CƠ BẢN CỦA NGÀY & ĐIỂM NĂNG SUẤT
             val totalCompleted = currentDateRecords.count { it.isCompleted }
             val totalMinutes = currentDateRecords.filter { it.isCompleted }.sumOf { it.actualFocusMinutes }
+            val score = pomodoroViewModel.productivityScore // Lấy điểm năng suất
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Bottom
             ) {
-                Text("Lịch sử phiên", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Lịch sử phiên", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Hiển thị Điểm Năng Suất (Màu sắc thay đổi theo điểm)
+                    val scoreColor = when {
+                        score >= 80 -> Color(0xFF4CAF50) // Xanh lá: Xuất sắc
+                        score >= 50 -> Color(0xFFFF9800) // Cam: Khá
+                        else -> Color(0xFFF44336) // Đỏ: Cần cố gắng
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = scoreColor.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            "⚡ Điểm: $score/100",
+                            color = scoreColor,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
                 Text(
                     text = "$totalCompleted phiên • $totalMinutes phút",
                     fontSize = 13.sp,
@@ -268,6 +296,9 @@ fun PomodoroScreen(
                     .putInt("sessions_count", newConfig.sessionsCount)
                     .putInt("long_break", newConfig.longBreak)
                     .putBoolean("auto_start", newConfig.autoStart)
+                    .putBoolean("sound_enabled", newConfig.soundEnabled)
+                    .putBoolean("keep_screen_on", newConfig.keepScreenOn)
+                    .putBoolean("hardcore_mode", newConfig.hardcoreMode)
                     .apply()
             }
         )
@@ -280,52 +311,75 @@ fun PomodoroSettingsDialog(
     onDismiss: () -> Unit,
     onSave: (PomodoroConfig) -> Unit
 ) {
+    val context = LocalContext.current
     var focusTime by remember { mutableStateOf(currentConfig.focusTime.toString()) }
     var shortBreak by remember { mutableStateOf(currentConfig.shortBreak.toString()) }
     var sessionsCount by remember { mutableStateOf(currentConfig.sessionsCount.toString()) }
     var longBreak by remember { mutableStateOf(currentConfig.longBreak.toString()) }
-    var autoStart by remember { mutableStateOf(currentConfig.autoStart) }
 
-    val presets = listOf(PomodoroConfig(25, 5, 4, 15), PomodoroConfig(30, 5, 4, 15), PomodoroConfig(45, 10, 4, 20))
+    var autoStart by remember { mutableStateOf(currentConfig.autoStart) }
+    var soundEnabled by remember { mutableStateOf(currentConfig.soundEnabled) }
+    var keepScreenOn by remember { mutableStateOf(currentConfig.keepScreenOn) }
+    var hardcoreMode by remember { mutableStateOf(currentConfig.hardcoreMode) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Cài đặt Pomodoro", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Cancel, "Đóng", tint = Color.Gray) }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
+                Text("Cài đặt Pomodoro", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                Spacer(modifier = Modifier.height(16.dp))
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     ConfigInputField("Tập trung", focusTime, { focusTime = it }, Modifier.weight(1f))
                     ConfigInputField("Nghỉ ngắn", shortBreak, { shortBreak = it }, Modifier.weight(1f))
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     ConfigInputField("Số phiên", sessionsCount, { sessionsCount = it }, Modifier.weight(1f))
                     ConfigInputField("Nghỉ dài", longBreak, { longBreak = it }, Modifier.weight(1f))
                 }
-                Spacer(modifier = Modifier.height(16.dp))
 
+                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+                // CÁC CÔNG TẮC UX
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Tự động bắt đầu chuyển phiên", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Switch(checked = autoStart, onCheckedChange = { autoStart = it })
+                    Text("Tự động chuyển phiên", fontSize = 14.sp); Switch(checked = autoStart, onCheckedChange = { autoStart = it })
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Âm thanh & Rung", fontSize = 14.sp); Switch(checked = soundEnabled, onCheckedChange = { soundEnabled = it })
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Giữ sáng màn hình", fontSize = 14.sp); Switch(checked = keepScreenOn, onCheckedChange = { keepScreenOn = it })
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    presets.forEach { preset ->
-                        val isSelected = preset.focusTime.toString() == focusTime && preset.shortBreak.toString() == shortBreak && preset.sessionsCount.toString() == sessionsCount && preset.longBreak.toString() == longBreak
-                        Surface(
-                            onClick = { focusTime = preset.focusTime.toString(); shortBreak = preset.shortBreak.toString(); sessionsCount = preset.sessionsCount.toString(); longBreak = preset.longBreak.toString() },
-                            shape = RoundedCornerShape(8.dp), color = if (isSelected) Color(0xFF4CAF50) else Color(0xFFE8F5E9), modifier = Modifier.height(36.dp)
-                        ) { Box(modifier = Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) { Text("${preset.focusTime}/${preset.shortBreak}/${preset.sessionsCount}/${preset.longBreak}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isSelected) Color.White else Color(0xFF2E7D32)) } }
+                // KỶ LUẬT THÉP
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column {
+                        Text("Kỷ luật thép (Chặn thông báo)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F))
+                        Text("Thoát app sẽ bị hủy phiên!", fontSize = 10.sp, color = Color.Gray)
                     }
+                    Switch(
+                        checked = hardcoreMode,
+                        onCheckedChange = { isChecked ->
+                            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                            if (isChecked && !notificationManager.isNotificationPolicyAccessGranted) {
+                                // Xin quyền DND nếu chưa có
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                                context.startActivity(intent)
+                            } else {
+                                hardcoreMode = isChecked
+                            }
+                        },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFD32F2F), checkedTrackColor = Color(0xFFFFCDD2))
+                    )
                 }
+
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
                     onClick = {
-                        val newConfig = PomodoroConfig(focusTime.toIntOrNull() ?: 25, shortBreak.toIntOrNull() ?: 5, sessionsCount.toIntOrNull() ?: 4, longBreak.toIntOrNull() ?: 15, autoStart)
+                        val newConfig = PomodoroConfig(
+                            focusTime.toIntOrNull() ?: 25, shortBreak.toIntOrNull() ?: 5, sessionsCount.toIntOrNull() ?: 4, longBreak.toIntOrNull() ?: 15,
+                            autoStart, soundEnabled, keepScreenOn, hardcoreMode
+                        )
                         onSave(newConfig)
                     },
                     modifier = Modifier.fillMaxWidth().height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57C00)), shape = RoundedCornerShape(12.dp)
