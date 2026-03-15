@@ -237,6 +237,31 @@ class MainActivity : FragmentActivity() {
                         com.personal.studentlifemanager.ui.screens.FlashcardListScreen(
                             deckId = deckId,
                             deckName = deckName,
+                            onBack = { navController.popBackStack() },
+                            // 🔥 THÊM CÁI NÀY ĐỂ KHI BẤM NÚT NÓ BAY SANG TRANG HỌC
+                            onNavigateToStudy = { id, name ->
+                                val encoded = java.net.URLEncoder.encode(name, "UTF-8")
+                                navController.navigate("flashcard_study/$id/$encoded")
+                            }
+                        )
+                    }
+
+                    // 🔥 11. MÀN HÌNH HỌC FLASHCARD (STUDY ENGINE)
+                    composable(
+                        route = "flashcard_study/{deckId}/{deckName}",
+                        arguments = listOf(
+                            androidx.navigation.navArgument("deckId") { type = androidx.navigation.NavType.StringType },
+                            androidx.navigation.navArgument("deckName") { type = androidx.navigation.NavType.StringType }
+                        )
+                    ) { backStackEntry ->
+                        val deckId = backStackEntry.arguments?.getString("deckId") ?: ""
+                        val rawDeckName = backStackEntry.arguments?.getString("deckName") ?: "Bộ thẻ"
+                        val deckName = java.net.URLDecoder.decode(rawDeckName, "UTF-8")
+
+                        // Sẽ tạo file này ở Bước 2
+                        com.personal.studentlifemanager.ui.screens.FlashcardStudyScreen(
+                            deckId = deckId,
+                            deckName = deckName,
                             onBack = { navController.popBackStack() }
                         )
                     }
