@@ -8,7 +8,10 @@ data class PomodoroConfig(
     val shortBreak: Int = 5,     // Phút nghỉ ngắn
     val sessionsCount: Int = 4,  // Số phiên trước khi nghỉ dài
     val longBreak: Int = 15,      // Phút nghỉ dài
-    val autoStart: Boolean = true // Bật/tắt tự động chuyển phiên
+    val autoStart: Boolean = true, // Bật/tắt tự động chuyển phiên
+    val soundEnabled: Boolean = true,     // Bật/tắt âm thanh
+    val keepScreenOn: Boolean = true,     // Giữ sáng màn hình
+    val hardcoreMode: Boolean = false     // Kỷ luật thép (Chặn thông báo & Cấm thoát app)
 )
 
 // Lưu trữ lịch sử 1 phiên tập trung (Để biết Hoàn thành hay Thất bại)

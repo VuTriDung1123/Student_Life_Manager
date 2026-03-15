@@ -44,6 +44,8 @@ class PomodoroService : Service() {
                     putExtra("long", config.longBreak)
                     putExtra("sessions", config.sessionsCount)
                     putExtra("autoStart", config.autoStart)
+                    putExtra("soundEnabled", config.soundEnabled)
+                    putExtra("hardcoreMode", config.hardcoreMode)
                 }
                 if (taskName != null) {
                     putExtra("taskName", taskName)
@@ -71,8 +73,9 @@ class PomodoroService : Service() {
     private val NOTIFICATION_ID = 1
 
     private var wasPlayingBeforeCall = false
+    private var soundEnabled = true
+    private var hardcoreMode = false
 
-    // 🔥 1. BỘ NHẬN DIỆN CUỘC GỌI TỪ SIM (Telephony)
     private val callReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
@@ -91,20 +94,17 @@ class PomodoroService : Service() {
 
     private lateinit var audioManager: AudioManager
 
-    // 🔥 2. BỘ NHẬN DIỆN ZALO/MESSENGER/YOUTUBE/TIKTOK (Audio Focus)
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // Có app khác (Zalo, Messenger) cướp quyền phát tiếng để đổ chuông -> Tự Pause
                 if (isRunning.value) {
                     wasPlayingBeforeCall = true
                     pauseTimer()
                 }
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
-                // App kia cúp máy, trả lại quyền âm thanh -> Tự Resume
                 if (wasPlayingBeforeCall) {
                     wasPlayingBeforeCall = false
                     startTimer()
@@ -116,9 +116,7 @@ class PomodoroService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        // Đăng ký bắt sóng SIM
         registerReceiver(callReceiver, IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED))
-        // Khởi tạo Audio Manager để bắt sóng Zalo/Messenger
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
 
@@ -132,6 +130,8 @@ class PomodoroService : Service() {
                 configLong = intent.getIntExtra("long", 15)
                 configSessions = intent.getIntExtra("sessions", 4)
                 autoStart = intent.getBooleanExtra("autoStart", true)
+                soundEnabled = intent.getBooleanExtra("soundEnabled", true)
+                hardcoreMode = intent.getBooleanExtra("hardcoreMode", false)
                 currentTaskName = intent.getStringExtra("taskName") ?: "Tự do"
 
                 timeLeft.value = configFocus * 60L
@@ -146,12 +146,27 @@ class PomodoroService : Service() {
             "ACTION_PAUSE" -> pauseTimer()
             "ACTION_RESUME" -> startTimer()
             "ACTION_ABORT" -> {
-                if (currentPhase.value == PomodoroPhase.FOCUS) saveSessionToDb(isSuccess = false)
+                if (currentPhase.value == PomodoroPhase.FOCUS) {
+                    saveSessionToDb(isSuccess = false)
+                    showFailedNotification() // 🔥 BẮN THÔNG BÁO CHỬI KHI BỊ HỦY
+                }
                 stopTimer()
             }
             "ACTION_STOP" -> stopTimer()
         }
         return START_STICKY
+    }
+
+    private fun toggleDND(enable: Boolean) {
+        if (!hardcoreMode) return
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (notificationManager.isNotificationPolicyAccessGranted) {
+            if (enable) {
+                notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_NONE)
+            } else {
+                notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+            }
+        }
     }
 
     private fun startForegroundService() {
@@ -164,8 +179,8 @@ class PomodoroService : Service() {
         isRunning.value = true
         timerJob?.cancel()
 
-        // 🔥 Xin quyền âm thanh để làm mồi nhử bắt Zalo/Messenger
         audioManager.requestAudioFocus(audioFocusChangeListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+        if (currentPhase.value == PomodoroPhase.FOCUS) toggleDND(true) else toggleDND(false)
 
         timerJob = serviceScope.launch {
             while (isRunning.value && timeLeft.value > 0) {
@@ -175,7 +190,7 @@ class PomodoroService : Service() {
             }
 
             if (isRunning.value && timeLeft.value == 0L) {
-                vibratePhone()
+                if (soundEnabled) vibratePhone()
                 handlePhaseEnd()
             }
         }
@@ -185,7 +200,6 @@ class PomodoroService : Service() {
         when (currentPhase.value) {
             PomodoroPhase.FOCUS -> {
                 saveSessionToDb(isSuccess = true)
-
                 if (currentSession.value < configSessions) {
                     currentPhase.value = PomodoroPhase.SHORT_BREAK
                     timeLeft.value = configShort * 60L
@@ -201,7 +215,6 @@ class PomodoroService : Service() {
                 currentPhase.value = PomodoroPhase.FOCUS
                 timeLeft.value = configFocus * 60L
                 focusStartTime = System.currentTimeMillis()
-
                 playSfx(R.raw.japanese_school_bell)
                 if (!autoStart) pauseTimer() else startTimer()
             }
@@ -214,7 +227,6 @@ class PomodoroService : Service() {
         }
     }
 
-    // LƯU TRỰC TIẾP LÊN FIREBASE FIRESTORE
     private fun saveSessionToDb(isSuccess: Boolean) {
         val auth = FirebaseAuth.getInstance()
         val userId = auth.currentUser?.uid ?: return
@@ -224,7 +236,6 @@ class PomodoroService : Service() {
         val actualMinutes = ((endTime - focusStartTime) / 60000).toInt()
 
         val record = PomodoroRecord(
-            // ... (Giữ nguyên các tham số cũ của bạn)
             startTime = focusStartTime,
             endTime = endTime,
             configFocus = configFocus,
@@ -239,29 +250,20 @@ class PomodoroService : Service() {
         val ref = db.collection("users").document(userId).collection("pomodoro_records").document()
         record.id = ref.id
         ref.set(record).addOnSuccessListener {
-            // 🔥 CHIẾN DỊCH 5: NẾU THÀNH CÔNG, TỰ ĐỘNG SYNC SANG HABIT MODULE
             if (isSuccess && currentTaskName.isNotBlank() && currentTaskName != "Tự do") {
                 syncHabitProgress(userId, db, currentTaskName)
             }
         }
     }
 
-    // 🔥 HÀM TỰ ĐỘNG ĐÁNH DẤU HOÀN THÀNH HABIT (Chạy ngầm không cần mở app)
     private fun syncHabitProgress(userId: String, db: FirebaseFirestore, habitName: String) {
         val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
         val habitsRef = db.collection("users").document(userId).collection("habits")
 
-        // Tìm xem có Habit nào trùng tên với Task của Pomodoro không
         habitsRef.whereEqualTo("name", habitName).get().addOnSuccessListener { snapshot ->
             if (!snapshot.isEmpty) {
-                val habitDoc = snapshot.documents[0]
-                val habitId = habitDoc.id
-
-                // Cập nhật lịch sử của Habit đó (Tick Done cho ngày hôm nay)
-                val updateData = mapOf(
-                    "history.$todayStr" to true, // Đánh dấu ngày hôm nay là True (Đã làm)
-                    "lastCompleted" to System.currentTimeMillis()
-                )
+                val habitId = snapshot.documents[0].id
+                val updateData = mapOf("history.$todayStr" to true, "lastCompleted" to System.currentTimeMillis())
                 habitsRef.document(habitId).update(updateData)
             }
         }
@@ -279,15 +281,37 @@ class PomodoroService : Service() {
         timerJob?.cancel()
         timeLeft.value = 0L
 
-        // Trả lại quyền âm thanh
+        toggleDND(false)
         audioManager.abandonAudioFocus(audioFocusChangeListener)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            stopForeground(true)
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { stopForeground(STOP_FOREGROUND_REMOVE) }
+        else { stopForeground(true) }
         stopSelf()
+    }
+
+    // 🔥 HÀM BẮN THÔNG BÁO BÁO LỖI KHI NGƯỜI DÙNG OUT APP
+    private fun showFailedNotification() {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val failChannelId = "pomodoro_fail_channel"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                failChannelId,
+                "Cảnh báo Thất bại",
+                NotificationManager.IMPORTANCE_HIGH // Ép nó phải hiện pop-up rớt xuống từ cạnh trên màn hình!
+            )
+            manager.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(this, failChannelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("Phiên Pomodoro thất bại! ❌")
+            .setContentText("Bạn vừa thoát ứng dụng. Sự xao nhãng này đã bị ghi vào lịch sử!")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        manager.notify(System.currentTimeMillis().toInt(), notification)
     }
 
     private fun updateNotification(timeStr: String = formatTime(timeLeft.value), content: String = "Đang ${currentPhase.value.title.lowercase()}: $currentTaskName") {
@@ -331,6 +355,7 @@ class PomodoroService : Service() {
     }
 
     private fun playSfx(resId: Int) {
+        if (!soundEnabled) return
         MediaPlayer.create(this, resId)?.apply { setOnCompletionListener { release() }; start() }
     }
 

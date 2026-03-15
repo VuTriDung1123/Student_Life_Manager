@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.personal.studentlifemanager.data.model.PomodoroConfig
 import com.personal.studentlifemanager.data.model.PomodoroRecord
 import java.util.Calendar
 
