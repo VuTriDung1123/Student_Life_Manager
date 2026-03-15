@@ -1,6 +1,7 @@
 package com.personal.studentlifemanager.ui.screens
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -25,6 +26,10 @@ class FlashcardViewModel : ViewModel() {
         private set
 
     var dueCards by mutableStateOf<List<Flashcard>>(emptyList())
+        private set
+
+    // 🔥 CUỐN SỔ GHI CHÉP THỐNG KÊ PHIÊN HỌC (Lưu số lượng thẻ theo từng mức độ đánh giá)
+    var sessionStats = mutableStateMapOf(1 to 0, 2 to 0, 3 to 0, 4 to 0)
         private set
 
     private var currentCardsListener: ListenerRegistration? = null
@@ -97,36 +102,35 @@ class FlashcardViewModel : ViewModel() {
     fun fetchDueCards(deckId: String) {
         if (userId.isEmpty() || deckId.isEmpty()) return
 
-        // Đặt mốc thời gian là 23:59:59 đêm nay
-        val todayMillis = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 23)
-            set(Calendar.MINUTE, 59)
-            set(Calendar.SECOND, 59)
-        }.timeInMillis
+        // Reset sổ ghi chép khi bắt đầu phiên mới
+        sessionStats[1] = 0; sessionStats[2] = 0; sessionStats[3] = 0; sessionStats[4] = 0
 
         db.collection("users").document(userId).collection("flashcards")
-            .whereEqualTo("deckId", deckId) // Lấy hết thẻ của bộ này về
+            .whereEqualTo("deckId", deckId)
             .get()
             .addOnSuccessListener { snapshot ->
                 val fetchedCards = snapshot?.documents?.mapNotNull { it.toObject(Flashcard::class.java) } ?: emptyList()
 
-                // 🔥 THUẬT TOÁN LỌC LOCAL (Lách luật Index của Firebase)
-                // Lọc ra các thẻ có ngày ôn tập <= hôm nay (Thẻ mới tạo có nextReviewDate = 0 nên sẽ luôn lọt vào đây)
-                val filteredDueCards = fetchedCards.filter { it.nextReviewDate <= todayMillis }
-
-                // Sắp xếp: Thẻ "LEARNING" học trước, rồi đến "NEW", cuối cùng là "REVIEW". Ưu tiên thẻ cũ trước.
-                dueCards = filteredDueCards
-                    .sortedWith(compareBy<Flashcard> { it.status }.thenBy { it.nextReviewDate })
-                    .take(100) // Tối đa 100 thẻ mỗi lần học cho đỡ ngộp
-            }
-            .addOnFailureListener {
-                it.printStackTrace() // Bắt lỗi nếu Firebase dở chứng
+                // 🔥 CHẾ ĐỘ CÀY CUỐC KHÔNG GIỚI HẠN (Không lọc ngày)
+                dueCards = fetchedCards
+                    .sortedWith(compareBy<Flashcard> {
+                        // Sắp xếp ưu tiên: Đang học (0) -> Mới (1) -> Đã thuộc (2)
+                        when(it.status) {
+                            "LEARNING" -> 0
+                            "NEW" -> 1
+                            "REVIEW" -> 2
+                            else -> 3
+                        }
+                    }.thenBy { it.nextReviewDate }) // Cùng trạng thái thì thẻ nào cũ hơn ưu tiên trước
+                    .take(200) // Tối đa 200 thẻ mỗi phiên
             }
     }
 
-    // 🔥 ĐÃ SỬA: Dùng Chuỗi "LEARNING" và "REVIEW" thay cho Enum
     fun rateCard(card: Flashcard, rating: Int) {
         if (userId.isEmpty()) return
+
+        // 🔥 GHI NHẬN THỐNG KÊ NGAY LẬP TỨC
+        sessionStats[rating] = (sessionStats[rating] ?: 0) + 1
 
         var newEaseFactor = card.easeFactor + (0.1f - (5 - rating) * (0.08f + (5 - rating) * 0.02f))
         if (newEaseFactor < 1.3f) newEaseFactor = 1.3f
@@ -138,7 +142,7 @@ class FlashcardViewModel : ViewModel() {
             1 -> {
                 newInterval = 0
                 newRepetitions = 0
-                card.status = "LEARNING" // 🔥 Chữ thay vì Enum
+                card.status = "LEARNING"
             }
             2, 3, 4 -> {
                 newRepetitions = card.repetitions + 1
@@ -148,7 +152,7 @@ class FlashcardViewModel : ViewModel() {
                     2 -> 6
                     else -> (card.interval * newEaseFactor).roundToInt()
                 }
-                card.status = "REVIEW" // 🔥 Chữ thay vì Enum
+                card.status = "REVIEW"
             }
         }
 

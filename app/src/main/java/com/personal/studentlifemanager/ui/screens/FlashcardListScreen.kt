@@ -54,7 +54,9 @@ fun FlashcardListScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
-            val cards = flashcardViewModel.cards
+            val cards = flashcardViewModel.cards.sortedBy {
+                when(it.status) { "LEARNING" -> 0; "NEW" -> 1; "REVIEW" -> 2; else -> 3 }
+            }
 
             // 🔥 2. NÚT HỌC THẺ TO BỰ DÀNH CHO BẠN
             if (cards.isNotEmpty()) {
@@ -106,27 +108,44 @@ fun FlashcardListScreen(
 
 @Composable
 fun CardItem(card: Flashcard, onEdit: () -> Unit, onDelete: () -> Unit) {
+    // 🔥 ĐỊNH NGHĨA MÀU SẮC DỰA VÀO TRẠNG THÁI THẺ
+    val (statusColor, statusText) = when(card.status) {
+        "LEARNING" -> Pair(Color(0xFFFF5252), "Đang học")  // Đỏ
+        "NEW"      -> Pair(Color(0xFF2196F3), "Thẻ Mới")   // Xanh dương
+        "REVIEW"   -> Pair(Color(0xFF4CAF50), "Đã thuộc")  // Xanh lá
+        else       -> Pair(Color.Gray, "")
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Q: ${card.frontText}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("A: ${card.backText}", fontSize = 15.sp, color = Color.DarkGray)
+        Row(modifier = Modifier.fillMaxWidth()) {
+            // Vạch màu đánh dấu trạng thái nằm ở cạnh trái
+            Box(modifier = Modifier.width(6.dp).fillMaxHeight().background(statusColor))
 
-                    if (card.note.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("📝 ${card.note}", fontSize = 12.sp, color = Color.Gray, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+            Column(modifier = Modifier.padding(16.dp).weight(1f)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Q: ${card.frontText}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("A: ${card.backText}", fontSize = 15.sp, color = Color.DarkGray)
+
+                        if (card.note.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("📝 ${card.note}", fontSize = 12.sp, color = Color.Gray, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                        }
+
+                        // Hiển thị chữ trạng thái thẻ
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Trạng thái: $statusText", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = statusColor)
                     }
-                }
 
-                Column {
-                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Edit, "Sửa", tint = Color.Gray) }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Delete, "Xóa", tint = Color.Red.copy(alpha = 0.7f)) }
+                    Column {
+                        IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Edit, "Sửa", tint = Color.Gray) }
+                        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Delete, "Xóa", tint = Color.Red.copy(alpha = 0.7f)) }
+                    }
                 }
             }
         }
