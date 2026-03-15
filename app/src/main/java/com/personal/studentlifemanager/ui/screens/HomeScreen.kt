@@ -22,7 +22,7 @@ fun HomeScreen(
     onLogout: () -> Unit,
     onNavigateToExpense: () -> Unit,
     onNavigateToPomodoro: () -> Unit,
-
+    onNavigateToFlashcard: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -67,7 +67,9 @@ fun HomeScreen(
                         onNavigateToPomodoro()
                     }
                 }
-                item { ModuleCard("Thẻ nhớ", Icons.AutoMirrored.Filled.MenuBook, Color(0xFF2196F3)) {} }
+                item { ModuleCard("Thẻ nhớ", Icons.AutoMirrored.Filled.MenuBook, Color(0xFF2196F3)) {
+                    onNavigateToFlashcard()
+                } }
                 item { ModuleCard("Thói quen", Icons.Default.TaskAlt, Color(0xFF9C27B0)) {} }
                 item(span = { GridItemSpan(2) }) {
                     ModuleCard("Helper (Bản đồ & Cẩm nang)", Icons.Default.Place, Color(0xFFFFC107)) {}

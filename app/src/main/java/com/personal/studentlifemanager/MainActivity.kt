@@ -6,8 +6,15 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.NavHost
@@ -106,6 +113,9 @@ class MainActivity : FragmentActivity() {
                             },
                             onNavigateToPomodoro = { // 🔥 Truyền lệnh chuyển sang Pomodoro
                                 navController.navigate("pomodoro")
+                            },
+                            onNavigateToFlashcard = {
+                                navController.navigate("flashcard_decks")
                             }
                         )
                     }
@@ -199,6 +209,36 @@ class MainActivity : FragmentActivity() {
                     //8. Màn hình báo cáo
                     composable("report") {
                         PomodoroReportScreen(onBack = { navController.popBackStack() })
+                    }
+
+                    // 🔥 9. MÀN HÌNH QUẢN LÝ DECK FLASHCARD
+                    composable("flashcard_decks") {
+                        com.personal.studentlifemanager.ui.screens.FlashcardDecksScreen(
+                            onBack = { navController.popBackStack() },
+                            onNavigateToDeck = { deckId, deckName ->
+                                val encodedName = java.net.URLEncoder.encode(deckName, "UTF-8")
+                                navController.navigate("flashcard_list/$deckId?deckName=$encodedName")
+                            }
+                        )
+                    }
+
+                    // 🔥 10. MÀN HÌNH DANH SÁCH THẺ TRONG DECK
+                    composable(
+                        route = "flashcard_list/{deckId}?deckName={deckName}",
+                        arguments = listOf(
+                            androidx.navigation.navArgument("deckId") { type = androidx.navigation.NavType.StringType },
+                            androidx.navigation.navArgument("deckName") { type = androidx.navigation.NavType.StringType; defaultValue = "Bộ thẻ" }
+                        )
+                    ) { backStackEntry ->
+                        val deckId = backStackEntry.arguments?.getString("deckId") ?: ""
+                        val rawDeckName = backStackEntry.arguments?.getString("deckName") ?: "Bộ thẻ"
+                        val deckName = java.net.URLDecoder.decode(rawDeckName, "UTF-8")
+
+                        com.personal.studentlifemanager.ui.screens.FlashcardListScreen(
+                            deckId = deckId,
+                            deckName = deckName,
+                            onBack = { navController.popBackStack() }
+                        )
                     }
                 }
             }
