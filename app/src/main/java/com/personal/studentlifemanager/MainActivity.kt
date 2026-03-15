@@ -238,10 +238,14 @@ class MainActivity : FragmentActivity() {
                             deckId = deckId,
                             deckName = deckName,
                             onBack = { navController.popBackStack() },
-                            // 🔥 THÊM CÁI NÀY ĐỂ KHI BẤM NÚT NÓ BAY SANG TRANG HỌC
                             onNavigateToStudy = { id, name ->
                                 val encoded = java.net.URLEncoder.encode(name, "UTF-8")
                                 navController.navigate("flashcard_study/$id/$encoded")
+                            },
+                            // 🔥 ĐÃ GẮN DÂY NÚT QUIZ VÀO MAIN ACTIVITY
+                            onNavigateToQuiz = { id, name ->
+                                val encoded = java.net.URLEncoder.encode(name, "UTF-8")
+                                navController.navigate("flashcard_quiz/$id/$encoded")
                             }
                         )
                     }
@@ -260,6 +264,24 @@ class MainActivity : FragmentActivity() {
 
                         // Sẽ tạo file này ở Bước 2
                         com.personal.studentlifemanager.ui.screens.FlashcardStudyScreen(
+                            deckId = deckId,
+                            deckName = deckName,
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                    // 🔥 12. MÀN HÌNH KIỂM TRA TRẮC NGHIỆM (QUIZ)
+                    composable(
+                        route = "flashcard_quiz/{deckId}/{deckName}",
+                        arguments = listOf(
+                            androidx.navigation.navArgument("deckId") { type = androidx.navigation.NavType.StringType },
+                            androidx.navigation.navArgument("deckName") { type = androidx.navigation.NavType.StringType }
+                        )
+                    ) { backStackEntry ->
+                        val deckId = backStackEntry.arguments?.getString("deckId") ?: ""
+                        val rawDeckName = backStackEntry.arguments?.getString("deckName") ?: "Bộ thẻ"
+                        val deckName = java.net.URLDecoder.decode(rawDeckName, "UTF-8")
+
+                        com.personal.studentlifemanager.ui.screens.FlashcardQuizScreen(
                             deckId = deckId,
                             deckName = deckName,
                             onBack = { navController.popBackStack() }
