@@ -1,8 +1,12 @@
 package com.personal.studentlifemanager.ui.screens
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -15,12 +19,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.personal.studentlifemanager.data.model.Flashcard
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,6 +39,7 @@ fun FlashcardStudyScreen(
     onBack: () -> Unit,
     flashcardViewModel: FlashcardViewModel = viewModel()
 ) {
+    // Tải dữ liệu bộ thẻ khi mở màn hình
     LaunchedEffect(deckId) {
         flashcardViewModel.fetchDueCards(deckId)
     }
@@ -38,14 +48,18 @@ fun FlashcardStudyScreen(
     var currentCardIndex by remember { mutableIntStateOf(0) }
     var isFlipped by remember { mutableStateOf(false) }
 
-    // Đã học xong toàn bộ thẻ trong mảng dueCards chưa?
+    // Kiểm tra trạng thái hoàn thành phiên học
     val isSessionFinished = dueCards.isNotEmpty() && currentCardIndex >= dueCards.size
+
+    // Quản lý trạng thái kéo thả theo trục X
+    val offsetX = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(if (isSessionFinished) "Kết quả ôn tập" else "Học thẻ: $deckName", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Trở về") } }
             )
         }
     ) { padding ->
@@ -54,37 +68,32 @@ fun FlashcardStudyScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            // TRƯỜNG HỢP 1: BỘ THẺ TRỐNG BÓC (Chưa tạo thẻ nào)
+            // Xử lý khi bộ thẻ trống
             if (dueCards.isEmpty()) {
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.Info, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(80.dp))
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("Bộ thẻ này chưa có từ vựng nào!", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Hãy quay lại và ấn dấu + để thêm thẻ nhé.", color = Color.Gray)
+                        Text("Bộ thẻ này chưa có từ vựng nào.", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
                         Spacer(modifier = Modifier.height(32.dp))
                         Button(onClick = onBack) { Text("Quay lại danh sách thẻ") }
                     }
                 }
             }
-
-            // TRƯỜNG HỢP 2: ĐÃ HỌC XONG PHIÊN HIỆN TẠI -> HIỆN THỐNG KÊ BIỂU ĐỒ
+            // Xử lý khi đã học xong toàn bộ thẻ
             else if (isSessionFinished) {
                 val stats = flashcardViewModel.sessionStats
                 val totalStudied = stats.values.sum()
 
                 Column(modifier = Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("🎉 Hoàn thành xuất sắc!", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
-                    Text("Bạn vừa ôn tập $totalStudied thẻ", fontSize = 16.sp, color = Color.Gray)
-
+                    Text("Hoàn thành bài học", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                    Text("Số lượng thẻ đã ôn tập: $totalStudied", fontSize = 16.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(32.dp))
 
-                    // Vẽ biểu đồ Bar Chart đơn giản
+                    // Vẽ biểu đồ phân tích độ khó
                     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5))) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Phân tích độ khó", fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
-
                             StatBar("Chưa thuộc", stats[1] ?: 0, totalStudied, Color(0xFFFF5252))
                             StatBar("Khó", stats[2] ?: 0, totalStudied, Color(0xFFFF9800))
                             StatBar("Tốt", stats[3] ?: 0, totalStudied, Color(0xFF4CAF50))
@@ -94,7 +103,7 @@ fun FlashcardStudyScreen(
 
                     Spacer(modifier = Modifier.weight(1f))
                     Button(
-                        onClick = onBack, // Bấm Hoàn tất sẽ văng ra lại danh sách thẻ
+                        onClick = onBack,
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape = RoundedCornerShape(16.dp)
                     ) {
@@ -102,8 +111,7 @@ fun FlashcardStudyScreen(
                     }
                 }
             }
-
-            // TRƯỜNG HỢP 3: ĐANG HỌC LẬT THẺ
+            // Trạng thái đang hiển thị và học thẻ
             else {
                 Text(
                     text = "Thẻ ${currentCardIndex + 1} / ${dueCards.size}",
@@ -113,38 +121,105 @@ fun FlashcardStudyScreen(
                 val currentCard = dueCards[currentCardIndex]
                 val rotation by animateFloatAsState(targetValue = if (isFlipped) 180f else 0f)
 
+                // Tính toán độ trong suốt và màu sắc của lớp phủ khi kéo
+                val overlayAlpha = (abs(offsetX.value) / 500f).coerceIn(0f, 0.4f)
+                val overlayColor = if (offsetX.value > 0) Color(0xFF4CAF50) else Color(0xFFFF5252)
+
                 Card(
-                    modifier = Modifier.fillMaxWidth().weight(1f)
-                        .graphicsLayer { rotationY = rotation; cameraDistance = 12f * density }
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                        // Đặt pointerInput trước graphicsLayer để tránh lật ngược trục X khi thẻ lật mặt sau
+                        .pointerInput(isFlipped) {
+                            if (!isFlipped) return@pointerInput
+
+                            detectDragGestures(
+                                onDragEnd = {
+                                    scope.launch {
+                                        if (offsetX.value > 250f) {
+                                            // Chuyển thẻ sang trạng thái "Tốt" khi kéo đủ xa sang phải
+                                            offsetX.animateTo(1000f, tween(300))
+                                            flashcardViewModel.rateCard(currentCard, 3)
+                                            currentCardIndex++
+                                            isFlipped = false
+                                            offsetX.snapTo(0f)
+                                        } else if (offsetX.value < -250f) {
+                                            // Chuyển thẻ sang trạng thái "Chưa thuộc" khi kéo đủ xa sang trái
+                                            offsetX.animateTo(-1000f, tween(300))
+                                            flashcardViewModel.rateCard(currentCard, 1)
+                                            currentCardIndex++
+                                            isFlipped = false
+                                            offsetX.snapTo(0f)
+                                        } else {
+                                            // Đưa thẻ về vị trí cũ nếu khoảng cách kéo không đủ
+                                            offsetX.animateTo(0f, spring())
+                                        }
+                                    }
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    scope.launch {
+                                        offsetX.snapTo(offsetX.value + dragAmount.x)
+                                    }
+                                }
+                            )
+                        }
+                        // Chỉnh sửa hiệu ứng nghiêng: Điểm neo ở đáy thẻ, đầu thẻ di chuyển
+                        .graphicsLayer {
+                            rotationZ = offsetX.value / 25f // Hiệu ứng nghiêng 3D kiểu Tinder
+                            cameraDistance = 12f * density // Khoảng cách camera để tạo hiệu ứng 3D
+                            // Đặt điểm neo ở đáy giữa thẻ (TransformOrigin(x=0.5f, y=1f))
+                            transformOrigin = TransformOrigin(0.5f, 1f)
+                        }
+                        // Hiệu ứng lật thẻFront/Back tách biệt với hiệu ứng nghiêng khi kéo
+                        .graphicsLayer {
+                            rotationY = rotation // Hiệu ứng lật thẻ Front/Back
+                            cameraDistance = 12f * density // Khoảng cách camera để tạo hiệu ứng 3D lật thẻ
+                            // Điểm neo mặc định ở trung tâm thẻ (TransformOrigin(x=0.5f, y=0.5f))
+                        }
                         .clickable { isFlipped = !isFlipped },
                     colors = CardDefaults.cardColors(containerColor = if (isFlipped) Color(0xFFFFF3E0) else Color.White),
                     shape = RoundedCornerShape(20.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                 ) {
-                    Box(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-                        if (rotation <= 90f) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.align(Alignment.Center)) {
-                                Text("Mặt trước", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(currentCard.frontText, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                            }
-                        } else {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.align(Alignment.Center).graphicsLayer { rotationY = 180f }) {
-                                Text("Mặt sau", fontSize = 12.sp, color = Color(0xFFFF9800))
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(currentCard.backText, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                                if (currentCard.note.isNotBlank()) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Box(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+                            if (rotation <= 90f) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.align(Alignment.Center)) {
+                                    Text("Mặt trước", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                                     Spacer(modifier = Modifier.height(16.dp))
-                                    Text("📝 ${currentCard.note}", fontSize = 14.sp, color = Color.Gray, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                                    Text(currentCard.frontText, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                                }
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.align(Alignment.Center).graphicsLayer { rotationY = 180f }) {
+                                    Text("Mặt sau", fontSize = 12.sp, color = Color(0xFFFF9800))
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(currentCard.backText, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                                    if (currentCard.note.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text("Ghi chú: ${currentCard.note}", fontSize = 14.sp, color = Color.Gray, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                                    }
                                 }
                             }
+                        }
+
+                        // Lớp phủ màu báo hiệu kết quả thao tác kéo
+                        if (isFlipped && overlayAlpha > 0f) {
+                            Box(modifier = Modifier.fillMaxSize().graphicsLayer { rotationY = 180f }.background(overlayColor.copy(alpha = overlayAlpha)))
                         }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                // Các nút điều khiển thủ công và chỉ dẫn
                 if (isFlipped) {
+                    Text(
+                        text = "👈 Vuốt trái (Chưa thuộc)   |   Vuốt phải (Tốt) 👉",
+                        fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
                     Row(modifier = Modifier.fillMaxWidth().height(60.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                         StudyActionButton("Chưa thuộc", Color(0xFFFF5252), 1) { flashcardViewModel.rateCard(currentCard, 1); currentCardIndex++; isFlipped = false }
                         StudyActionButton("Khó", Color(0xFFFF9800), 2) { flashcardViewModel.rateCard(currentCard, 2); currentCardIndex++; isFlipped = false }
@@ -165,7 +240,7 @@ fun FlashcardStudyScreen(
     }
 }
 
-// Hàm vẽ thanh trạng thái (Thống kê kết quả)
+// Xây dựng thanh trạng thái thống kê kết quả
 @Composable
 fun StatBar(label: String, count: Int, total: Int, color: Color) {
     val progress = if (total > 0) count.toFloat() / total else 0f
@@ -178,6 +253,7 @@ fun StatBar(label: String, count: Int, total: Int, color: Color) {
     }
 }
 
+// Xây dựng các nút chọn cấp độ ưu tiên ôn tập
 @Composable
 fun StudyActionButton(text: String, color: Color, rating: Int, onClick: () -> Unit) {
     Button(
