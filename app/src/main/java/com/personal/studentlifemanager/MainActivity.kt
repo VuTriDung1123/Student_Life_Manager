@@ -24,21 +24,23 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.google.firebase.auth.FirebaseAuth
-import com.personal.studentlifemanager.ui.screens.BudgetScreen
-import com.personal.studentlifemanager.ui.screens.ExpenseScreen
-import com.personal.studentlifemanager.ui.screens.HomeScreen
-import com.personal.studentlifemanager.ui.screens.LoginScreen
-import com.personal.studentlifemanager.ui.screens.CategoryScreen
-import com.personal.studentlifemanager.ui.screens.ExpenseAnalyticsScreen
-import com.personal.studentlifemanager.ui.screens.PomodoroScreen
-import com.personal.studentlifemanager.ui.screens.PomodoroTimerScreen
-import com.personal.studentlifemanager.ui.screens.RecurringScreen
-import com.personal.studentlifemanager.worker.ReminderWorker
+import com.personal.studentlifemanager.features.expense.BudgetScreen
+import com.personal.studentlifemanager.features.expense.ExpenseScreen
+import com.personal.studentlifemanager.features.dashboard.HomeScreen
+import com.personal.studentlifemanager.features.auth.LoginScreen
+import com.personal.studentlifemanager.features.expense.CategoryScreen
+import com.personal.studentlifemanager.features.expense.ExpenseAnalyticsScreen
+import com.personal.studentlifemanager.features.pomodoro.PomodoroScreen
+import com.personal.studentlifemanager.features.pomodoro.PomodoroTimerScreen
+import com.personal.studentlifemanager.features.expense.RecurringScreen
+import com.personal.studentlifemanager.features.expense.ReminderWorker
+import com.personal.studentlifemanager.features.habit.HabitScreen
+import com.personal.studentlifemanager.features.campus.CampusHelperScreen
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
-import com.personal.studentlifemanager.ui.screens.PomodoroReportScreen
+import com.personal.studentlifemanager.features.pomodoro.PomodoroReportScreen
 import java.net.URLEncoder
 import java.net.URLDecoder
 
@@ -116,7 +118,27 @@ class MainActivity : FragmentActivity() {
                             },
                             onNavigateToFlashcard = {
                                 navController.navigate("flashcard_decks")
+                            },
+                            onNavigateToHabit = {
+                                navController.navigate("habit")
+                            },
+                            onNavigateToCampus = {
+                                navController.navigate("campus")
                             }
+                        )
+                    }
+
+                    // 2.1 Habit Screen
+                    composable("habit") {
+                        HabitScreen(
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                    
+                    // 2.2 Campus Helper Screen
+                    composable("campus") {
+                        CampusHelperScreen(
+                            onBack = { navController.popBackStack() }
                         )
                     }
 
@@ -174,7 +196,7 @@ class MainActivity : FragmentActivity() {
                         val decodedTask = URLDecoder.decode(rawTaskName, "UTF-8")
 
                         PomodoroTimerScreen(
-                            config = com.personal.studentlifemanager.data.model.PomodoroConfig(focus, short, sessions, long),
+                            config = com.personal.studentlifemanager.features.pomodoro.PomodoroConfig(focus, short, sessions, long),
                             taskName = decodedTask, // 🔥 LỖI Ở ĐÂY NÈ: Đã bổ sung truyền taskName vào!
                             onBack = { navController.popBackStack() }
                         )
@@ -213,7 +235,7 @@ class MainActivity : FragmentActivity() {
 
                     // 🔥 9. MÀN HÌNH QUẢN LÝ DECK FLASHCARD
                     composable("flashcard_decks") {
-                        com.personal.studentlifemanager.ui.screens.FlashcardDecksScreen(
+                        com.personal.studentlifemanager.features.flashcard.FlashcardDecksScreen(
                             onBack = { navController.popBackStack() },
                             onNavigateToDeck = { deckId, deckName ->
                                 val encodedName = java.net.URLEncoder.encode(deckName, "UTF-8")
@@ -234,7 +256,7 @@ class MainActivity : FragmentActivity() {
                         val rawDeckName = backStackEntry.arguments?.getString("deckName") ?: "Bộ thẻ"
                         val deckName = java.net.URLDecoder.decode(rawDeckName, "UTF-8")
 
-                        com.personal.studentlifemanager.ui.screens.FlashcardListScreen(
+                        com.personal.studentlifemanager.features.flashcard.FlashcardListScreen(
                             deckId = deckId,
                             deckName = deckName,
                             onBack = { navController.popBackStack() },
@@ -263,7 +285,7 @@ class MainActivity : FragmentActivity() {
                         val deckName = java.net.URLDecoder.decode(rawDeckName, "UTF-8")
 
                         // Sẽ tạo file này ở Bước 2
-                        com.personal.studentlifemanager.ui.screens.FlashcardStudyScreen(
+                        com.personal.studentlifemanager.features.flashcard.FlashcardStudyScreen(
                             deckId = deckId,
                             deckName = deckName,
                             onBack = { navController.popBackStack() }
@@ -281,7 +303,7 @@ class MainActivity : FragmentActivity() {
                         val rawDeckName = backStackEntry.arguments?.getString("deckName") ?: "Bộ thẻ"
                         val deckName = java.net.URLDecoder.decode(rawDeckName, "UTF-8")
 
-                        com.personal.studentlifemanager.ui.screens.FlashcardQuizScreen(
+                        com.personal.studentlifemanager.features.flashcard.FlashcardQuizScreen(
                             deckId = deckId,
                             deckName = deckName,
                             onBack = { navController.popBackStack() }
@@ -313,7 +335,7 @@ class MainActivity : FragmentActivity() {
 
         val timeDiff = dueDate.timeInMillis - currentDate.timeInMillis
 
-        val dailyWorkRequest = PeriodicWorkRequestBuilder<com.personal.studentlifemanager.worker.ReminderWorker>(24, TimeUnit.HOURS)
+        val dailyWorkRequest = PeriodicWorkRequestBuilder<com.personal.studentlifemanager.features.expense.ReminderWorker>(24, TimeUnit.HOURS)
             .setInitialDelay(timeDiff, TimeUnit.MILLISECONDS)
             .build()
 
@@ -324,3 +346,4 @@ class MainActivity : FragmentActivity() {
         )
     }
 }
+
